@@ -2,6 +2,7 @@
 #include "remaster_shaders.h"
 #include "remaster_config.h"
 #include "remaster_lighting.h"
+#include "remaster_hud.h"
 
 #include <iostream>
 #include <vector>
@@ -191,6 +192,7 @@ bool RemasterGL::init(int screen_w, int screen_h)
     if (!compile_shader(s_composite_prog, RemasterShaders::quad_vs, RemasterShaders::composite_fs)) return false;
 
     init_fbo(screen_w, screen_h);
+    RemasterHUD::get().init();
 
     s_initialized = true;
     std::cout << "[RemasterGL] Initialized Modern 2D Deferred GPU Pipeline (GL 3.3 Core)." << std::endl;
@@ -200,6 +202,8 @@ bool RemasterGL::init(int screen_w, int screen_h)
 void RemasterGL::shutdown()
 {
     if (!s_initialized) return;
+
+    RemasterHUD::get().cleanup();
 
     glDeleteVertexArrays(1, &s_quad_vao);
     glDeleteBuffers(1, &s_quad_vbo);
@@ -243,21 +247,49 @@ void RemasterGL::render_quad()
 
 void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, int window_w, int window_h)
 {
+    auto &cfg = RemasterConfig::get();
+
     // Update source texture
     glBindTexture(GL_TEXTURE_2D, s_source_texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, src_w, src_h, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixel_data);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, window_w, window_h);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+
+    int vp_x = 0, vp_y = 0, vp_w = window_w, vp_h = window_h;
+    if (cfg.widescreen && src_h > 0)
+    {
+        float target_aspect = static_cast<float>(src_w) / static_cast<float>(src_h);
+        float win_aspect = static_cast<float>(window_w) / static_cast<float>(window_h);
+        if (win_aspect > target_aspect)
+        {
+            vp_w = static_cast<int>(window_h * target_aspect);
+            vp_h = window_h;
+            vp_x = (window_w - vp_w) / 2;
+            vp_y = 0;
+        }
+        else
+        {
+            vp_w = window_w;
+            vp_h = static_cast<int>(window_w / target_aspect);
+            vp_x = 0;
+            vp_y = (window_h - vp_h) / 2;
+        }
+    }
+    glViewport(vp_x, vp_y, vp_w, vp_h);
 
     glUseProgram(s_classic_prog);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_source_texture);
     glUniform1i(glGetUniformLocation(s_classic_prog, "u_screen"), 0);
-    glUniform1i(glGetUniformLocation(s_classic_prog, "u_crt_enabled"), RemasterConfig::get().crt_filter ? 1 : 0);
+    glUniform1i(glGetUniformLocation(s_classic_prog, "u_crt_enabled"), cfg.crt_filter ? 1 : 0);
 
     render_quad();
+
+    // Remaster HUD & Notification pass
+    RemasterHUD::get().render(window_w, window_h);
 }
 
 void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h)
@@ -371,7 +403,30 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     // 5. Final Composite Pass to Window Framebuffer
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, window_w, window_h);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+
+    int vp_x = 0, vp_y = 0, vp_w = window_w, vp_h = window_h;
+    if (cfg.widescreen && src_h > 0)
+    {
+        float target_aspect = static_cast<float>(src_w) / static_cast<float>(src_h);
+        float win_aspect = static_cast<float>(window_w) / static_cast<float>(window_h);
+        if (win_aspect > target_aspect)
+        {
+            vp_w = static_cast<int>(window_h * target_aspect);
+            vp_h = window_h;
+            vp_x = (window_w - vp_w) / 2;
+            vp_y = 0;
+        }
+        else
+        {
+            vp_w = window_w;
+            vp_h = static_cast<int>(window_w / target_aspect);
+            vp_x = 0;
+            vp_y = (window_h - vp_h) / 2;
+        }
+    }
+    glViewport(vp_x, vp_y, vp_w, vp_h);
 
     glUseProgram(s_composite_prog);
 
@@ -393,4 +448,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     glUniform1f(glGetUniformLocation(s_composite_prog, "u_time"), s_time);
 
     render_quad();
+
+    // 6. Modern Widescreen HUD & In-Game Dashboard Pass
+    RemasterHUD::get().render(window_w, window_h);
 }

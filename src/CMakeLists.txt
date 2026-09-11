@@ -79,6 +79,7 @@ add_executable(abuse
     remaster/remaster_assets.cpp remaster/remaster_assets.h
     remaster/remaster_timing.cpp remaster/remaster_timing.h
     remaster/remaster_audio.cpp remaster/remaster_audio.h
+    remaster/remaster_hud.cpp remaster/remaster_hud.h
     remaster/remaster_shaders.h
     ${abuse_RESOURCE_FILES}
 )

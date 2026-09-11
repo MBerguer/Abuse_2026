@@ -21,12 +21,13 @@ public:
     static void render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h);
     static void render_classic(const void *pixel_data, int src_w, int src_h, int window_w, int window_h);
 
+    static void render_quad();
+    static bool compile_shader(GLuint &program, const char *vs_src, const char *fs_src);
+
     static bool is_initialized() { return s_initialized; }
 
 private:
-    static bool compile_shader(GLuint &program, const char *vs_src, const char *fs_src);
     static void init_fbo(int w, int h);
-    static void render_quad();
 
     static bool s_initialized;
     static int s_width;

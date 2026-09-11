@@ -321,6 +321,19 @@ void main()
 }
 )";
 
+// Remaster HUD & In-game Settings Overlay FS
+static const char *hud_overlay_fs = R"(#version 330 core
+in vec2 TexCoords;
+out vec4 FragColor;
+
+uniform sampler2D u_hud_texture;
+
+void main()
+{
+    FragColor = texture(u_hud_texture, TexCoords);
+}
+)";
+
 } // namespace RemasterShaders
 
 #endif // REMASTER_SHADERS_H

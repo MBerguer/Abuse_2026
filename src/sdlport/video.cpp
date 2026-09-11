@@ -103,26 +103,55 @@ void handle_window_resize()
     int window_width, window_height;
     SDL_GetWindowSize(window, &window_width, &window_height);
 
-    float target_aspect = static_cast<float>(xres) / yres;
-    float current_aspect = static_cast<float>(window_width) / window_height;
+    if (!RemasterConfig::get().widescreen)
+    {
+        float target_aspect = static_cast<float>(xres) / yres;
+        float current_aspect = static_cast<float>(window_width) / window_height;
 
-    if (current_aspect > target_aspect)
-        window_width = static_cast<int>(window_height * target_aspect);
-    else
-        window_height = static_cast<int>(window_width / target_aspect);
+        if (current_aspect > target_aspect)
+            window_width = static_cast<int>(window_height * target_aspect);
+        else
+            window_height = static_cast<int>(window_width / target_aspect);
 
-    if(target_aspect != current_aspect)
-        SDL_SetWindowSize(window, window_width, window_height);
+        if(target_aspect != current_aspect)
+            SDL_SetWindowSize(window, window_width, window_height);
+    }
 
     SDL_Rect viewport = {0, 0, window_width, window_height};
-    if (renderer)
-        SDL_RenderGetViewport(renderer, &viewport);
+    if (RemasterConfig::get().widescreen && yres > 0)
+    {
+        float target_aspect = static_cast<float>(xres) / yres;
+        float current_aspect = static_cast<float>(window_width) / window_height;
+        if (current_aspect > target_aspect)
+        {
+            viewport.w = static_cast<int>(window_height * target_aspect);
+            viewport.h = window_height;
+            viewport.x = (window_width - viewport.w) / 2;
+            viewport.y = 0;
+        }
+        else
+        {
+            viewport.w = window_width;
+            viewport.h = static_cast<int>(window_width / target_aspect);
+            viewport.x = 0;
+            viewport.y = (window_height - viewport.h) / 2;
+        }
+        mouse_xscale = (viewport.w << 16) / xres;
+        mouse_yscale = (viewport.h << 16) / yres;
+        mouse_xpad = viewport.x;
+        mouse_ypad = viewport.y;
+    }
+    else
+    {
+        if (renderer)
+            SDL_RenderGetViewport(renderer, &viewport);
 
-    mouse_xscale = (window_width << 16) / xres;
-    mouse_yscale = (window_height << 16) / yres;
+        mouse_xscale = (window_width << 16) / xres;
+        mouse_yscale = (window_height << 16) / yres;
 
-    mouse_xpad = viewport.x;
-    mouse_ypad = viewport.y;
+        mouse_xpad = viewport.x;
+        mouse_ypad = viewport.y;
+    }
 }
 
 //
