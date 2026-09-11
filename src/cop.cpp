@@ -1103,7 +1103,7 @@ void *show_kills()
   return NULL;
 }
 
-bool get_player_muzzle_pos(view *v, int &muzzle_x, int &muzzle_y)
+bool get_player_muzzle_pos(view *v, int &muzzle_x, int &muzzle_y, float &dir_x, float &dir_y)
 {
   if (!v || !v->m_focus)
     return false;
@@ -1115,6 +1115,8 @@ bool get_player_muzzle_pos(view *v, int &muzzle_x, int &muzzle_y)
   {
     muzzle_x = v->x_center();
     muzzle_y = v->y_center() - 16;
+    dir_x = (bot->direction < 0) ? -1.0f : 1.0f;
+    dir_y = 0.0f;
     return true;
   }
 
@@ -1128,6 +1130,14 @@ bool get_player_muzzle_pos(view *v, int &muzzle_x, int &muzzle_y)
 
   muzzle_x = bx + fire_off[top->current_frame * 2];
   muzzle_y = bot->y - fire_off[top->current_frame * 2 + 1];
+
+  // True weapon aim angle from Abuse top character (0..359 degrees)
+  // Abuse angle 0 = right, 90 = up, 180 = left, 270 = down
+  int angle = top->lvars[point_angle];
+  float rad = (float)angle * 3.141592653589793f / 180.0f;
+  dir_x = std::cos(rad);
+  dir_y = -std::sin(rad); // In screen coordinates, +Y is downwards
+
   return true;
 }
 

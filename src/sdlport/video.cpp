@@ -496,7 +496,8 @@ void update_window_done()
         if (RemasterConfig::get().enabled && in_gameplay && player_list)
         {
             int p_world_x = 0, p_world_y = 0;
-            if (!get_player_muzzle_pos(player_list, p_world_x, p_world_y))
+            float aim_dir_x = 0.0f, aim_dir_y = 0.0f;
+            if (!get_player_muzzle_pos(player_list, p_world_x, p_world_y, aim_dir_x, aim_dir_y))
             {
                 p_world_x = player_list->x_center();
                 p_world_y = player_list->y_center() - 16;
@@ -519,7 +520,8 @@ void update_window_done()
                 player_list->xoff(), player_list->yoff(), xres, yres,
                 p_screen.x, p_screen.y,
                 aim_screen.x, aim_screen.y,
-                player_list->b1_suggestion != 0
+                player_list->b1_suggestion != 0,
+                aim_dir_x, aim_dir_y
             );
         }
         else

@@ -31,6 +31,6 @@ void *score_draw();
 void *show_kills();
 
 class view;
-bool get_player_muzzle_pos(view *v, int &muzzle_x, int &muzzle_y);
+bool get_player_muzzle_pos(view *v, int &muzzle_x, int &muzzle_y, float &dir_x, float &dir_y);
 
 #endif

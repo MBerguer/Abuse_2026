@@ -62,7 +62,8 @@ void RemasterLighting::add_spot_light(float norm_x, float norm_y, float norm_z,
 void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_w, int view_h,
                                            int player_screen_x, int player_screen_y,
                                            int aim_screen_x, int aim_screen_y,
-                                           bool player_firing)
+                                           bool player_firing,
+                                           float aim_dir_x, float aim_dir_y)
 {
     clear();
 
@@ -91,22 +92,26 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
     {
         float px = (float)player_screen_x / (float)view_w;
         float py = (float)player_screen_y / (float)view_h;
-        float ax = (float)aim_screen_x / (float)view_w;
-        float ay = (float)aim_screen_y / (float)view_h;
 
-        float dx = ax - px;
-        float dy = ay - py;
-        float len = std::sqrt(dx * dx + dy * dy);
-
-        if (len > 0.0001f)
+        float dx = aim_dir_x;
+        float dy = aim_dir_y;
+        if (std::abs(dx) < 0.0001f && std::abs(dy) < 0.0001f)
         {
-            dx /= len;
-            dy /= len;
-        }
-        else
-        {
-            dx = 1.0f;
-            dy = 0.0f;
+            float ax = (float)aim_screen_x / (float)view_w;
+            float ay = (float)aim_screen_y / (float)view_h;
+            dx = ax - px;
+            dy = ay - py;
+            float len = std::sqrt(dx * dx + dy * dy);
+            if (len > 0.0001f)
+            {
+                dx /= len;
+                dy /= len;
+            }
+            else
+            {
+                dx = 1.0f;
+                dy = 0.0f;
+            }
         }
 
         // 2a. Player subtle body presence (dim ambient glow around character)

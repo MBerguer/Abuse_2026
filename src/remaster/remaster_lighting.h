@@ -38,7 +38,8 @@ public:
     void update_frame_lights(int camera_x, int camera_y, int view_w, int view_h,
                              int player_screen_x, int player_screen_y,
                              int aim_screen_x, int aim_screen_y,
-                             bool player_firing);
+                             bool player_firing,
+                             float aim_dir_x = 0.0f, float aim_dir_y = 0.0f);
 
     const std::vector<GPULight> &get_lights() const { return m_lights; }
 
