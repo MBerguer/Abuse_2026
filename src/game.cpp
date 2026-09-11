@@ -42,6 +42,7 @@
 #include "game.h"
 #include "remaster/remaster_timing.h"
 #include "remaster/remaster_config.h"
+#include "remaster/remaster_audio.h"
 
 #include "id.h"
 #include "timing.h"
@@ -178,6 +179,46 @@ void Game::play_sound(int id, int vol, int32_t x, int32_t y)
         return;
     if(!player_list)
         return;
+
+    if (RemasterConfig::get().enabled && RemasterConfig::get().spatial_audio)
+    {
+        // 3D Spatial Audio HRTF Pipeline
+        view *closest_player = nullptr;
+        float min_dist_sq = 1e9f;
+        for(view *f = player_list; f; f = f->next)
+        {
+            if(!f->local_player())
+                continue;
+            float dx = static_cast<float>(f->x_center() - x);
+            float dy = static_cast<float>(f->y_center() - y);
+            float dist_sq = dx * dx + dy * dy;
+            if(dist_sq < min_dist_sq)
+            {
+                min_dist_sq = dist_sq;
+                closest_player = f;
+            }
+        }
+
+        if(!closest_player)
+            return;
+
+        int adjusted_base_vol = vol * sfx_volume / 127;
+        auto spatial = RemasterAudio::get().calculate_spatial(
+            x, y,
+            closest_player->x_center(), closest_player->y_center(),
+            adjusted_base_vol
+        );
+
+        if(spatial.audible && spatial.volume > 0)
+        {
+            sound_effect *sfx = cache.sfx(id);
+            if(sfx)
+            {
+                sfx->play_spatial(spatial.volume, spatial.left, spatial.right);
+            }
+        }
+        return;
+    }
 
     int mindist = 500;
     view *cd = NULL;

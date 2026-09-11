@@ -38,6 +38,8 @@
 #include "hmi.h"
 #include "specs.h"
 #include "setup.h"
+#include "remaster/remaster_audio.h"
+#include "remaster/remaster_config.h"
 
 // Global settings object (defined setup.cpp)
 extern Settings settings;
@@ -231,10 +233,25 @@ void sound_effect::play(int volume, int pitch, int panpot)
     }
 }
 
+void sound_effect::play_spatial(int volume, uint8_t left, uint8_t right)
+{
+    if (!enabled || settings.no_sound || !m_chunk)
+        return;
+
+    volume = std::clamp(volume, 0, 127);
+
+    int channel = Mix_PlayChannel(-1, m_chunk, 0);
+    if (channel > -1)
+    {
+        Mix_Volume(channel, volume);
+        Mix_SetPanning(channel, left, right);
+    }
+}
+
 /**
  * @brief Constructor for music/song objects
  *
- * Loads a music file (HMI format) and prepares it for playback.
+ * Loads a music file (HMI format or HD remaster) and prepares it for playback.
  * Uses SDL_RWops for memory-based playback to avoid keeping files open.
  *
  * @param filename Path to the music file
@@ -253,6 +270,21 @@ song::song(char const *filename)
 
     try
     {
+        // Check for remastered HD music track (.ogg, .flac, .mp3, .wav)
+        if (RemasterConfig::get().enabled)
+        {
+            std::string hd_music_path = RemasterAudio::get().find_hd_music(filename);
+            if (!hd_music_path.empty())
+            {
+                music = Mix_LoadMUS(hd_music_path.c_str());
+                if (music)
+                {
+                    printf("Sound: Loaded HD Remaster soundtrack: %s\n", hd_music_path.c_str());
+                    return;
+                }
+            }
+        }
+
         // Load HMI format music file into memory
         uint32_t data_size;
         data = load_hmi(filename, data_size);

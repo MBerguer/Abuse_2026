@@ -32,6 +32,8 @@ public:
     ~sound_effect();
 
     void play(int volume = 127, int pitch = 128, int panpot = 128);
+    void play_spatial(int volume, uint8_t left, uint8_t right);
+    Mix_Chunk* get_chunk() const { return m_chunk; }
 
 private:
     Mix_Chunk* m_chunk;
