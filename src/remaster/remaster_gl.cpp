@@ -538,6 +538,14 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     glBindTexture(GL_TEXTURE_2D, s_g_albedo);
     glUniform1i(glGetUniformLocation(s_composite_prog, "u_albedo"), 2);
 
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, s_g_normal);
+    glUniform1i(glGetUniformLocation(s_composite_prog, "u_normal"), 3);
+
+    glActiveTexture(GL_TEXTURE4);
+    glBindTexture(GL_TEXTURE_2D, s_g_occlusion);
+    glUniform1i(glGetUniformLocation(s_composite_prog, "u_occlusion"), 4);
+
     glUniform1f(glGetUniformLocation(s_composite_prog, "u_bloom_intensity"), cfg.bloom_intensity);
     glUniform1i(glGetUniformLocation(s_composite_prog, "u_bloom_enabled"), cfg.bloom ? 1 : 0);
     glUniform1i(glGetUniformLocation(s_composite_prog, "u_reflections_enabled"), (in_gameplay && cfg.reflections) ? 1 : 0);

@@ -107,15 +107,57 @@ void main()
     float dy = (d - u) * u_normal_strength;
     vec3 n = normalize(vec3(dx, dy, 1.0));
 
-    // Material detection: metallic and roughness for PBR lighting response
+    // Material detection: metallic, roughness, and water/liquid for PBR lighting & reflections
     float lum = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
     float max_c = max(max(col.r, col.g), col.b);
     float min_c = min(min(col.r, col.g), col.b);
     float sat = (max_c > 0.01) ? (max_c - min_c) / max_c : 0.0;
 
-    // Metallic surfaces (metal pipes, armor, rails, machinery): low saturation, mid-to-high luminance
-    float metallic = clamp((1.0 - sat * 1.5) * smoothstep(0.12, 0.45, lum), 0.0, 0.85);
-    float roughness = clamp(0.20 + sat * 0.55 + (1.0 - lum) * 0.35, 0.15, 0.90);
+    // Metallic surfaces (metal pipes, armor, rails, machinery, steel walkways):
+    // Low saturation, neutral or blue-gray tint, mid-to-high luminance
+    float metallic = clamp((1.0 - sat * 1.6) * smoothstep(0.10, 0.45, lum), 0.0, 0.90);
+    float roughness = clamp(0.18 + sat * 0.55 + (1.0 - lum) * 0.35, 0.12, 0.90);
+
+    // Liquid & Wet Surface detection:
+    // 1. Toxic radioactive acid pools (vibrant greens)
+    bool isAcid = (col.g > 0.35 && col.r < 0.28 && col.b < 0.30);
+    // 2. Dark water pools & wet floor basins
+    bool isWater = (col.b > 0.16 && col.b >= col.r && col.g >= col.r * 0.7 && lum < 0.45);
+    // 3. Polished damp catwalks & wet floor tiles
+    bool isWetFloor = (metallic > 0.35 && lum < 0.30);
+
+    float water = 0.0;
+    if (isAcid)
+    {
+        water = 1.0;
+        roughness = 0.04;
+        metallic = 0.10;
+    }
+    else if (isWater)
+    {
+        water = 0.90;
+        roughness = 0.05;
+        metallic = 0.08;
+    }
+    else if (isWetFloor)
+    {
+        water = 0.50;
+        roughness = 0.12;
+    }
+
+    // High-frequency procedural micro-surface detail (prevents flat chunky look at 4K)
+    if (metallic > 0.25)
+    {
+        // Brushed anisotropic micro-grooves along metal plates
+        float brush = sin(TexCoords.y * 3200.0) * 0.10 * (1.0 - roughness);
+        n = normalize(n + vec3(0.0, brush, 0.0));
+    }
+    else if (water > 0.1)
+    {
+        // Liquid surface micro-ripples
+        float wave = (sin(TexCoords.x * 500.0) + cos(TexCoords.y * 400.0)) * 0.08;
+        n = normalize(n + vec3(wave, wave * 0.5, 0.0));
+    }
 
     gNormal = vec4(n * 0.5 + 0.5, roughness);
 
@@ -137,8 +179,9 @@ void main()
     }
 
     // Occlusion map for 2D Ray Tracing: solid dense geometry casts shadows
+    // r: shadow caster, g: metallic, b: water/fluid, a: 1.0
     float occ = (lum < 0.03 && col.a > 0.8) ? 1.0 : 0.0;
-    gOcclusion = vec4(occ, metallic, 0.0, 1.0);
+    gOcclusion = vec4(occ, metallic, water, 1.0);
 }
 )";
 
@@ -234,8 +277,15 @@ void main()
     vec4 norm_data = texture(u_normal, TexCoords);
     vec3 normal = normalize(norm_data.rgb * 2.0 - 1.0);
     float roughness = norm_data.a;
-    float metallic = texture(u_occlusion, TexCoords).g;
+    vec4 occ_data = texture(u_occlusion, TexCoords);
+    float metallic = occ_data.g;
+    float water = occ_data.b;
     vec3 emission = texture(u_emission, TexCoords).rgb;
+
+    if (water > 0.1)
+    {
+        roughness = mix(roughness, 0.04, water);
+    }
 
     vec3 total_diffuse = u_ambient_color;
     vec3 total_specular = vec3(0.0);
@@ -284,13 +334,14 @@ void main()
         // Specular (Blinn-Phong) with material roughness & metallic response
         vec3 view_dir = vec3(0.0, 0.0, 1.0);
         vec3 half_dir = normalize(light_dir + view_dir);
-        float spec_exp = mix(64.0, 6.0, roughness);
+        float spec_exp = mix(128.0, 8.0, roughness);
         float spec = pow(max(dot(normal, half_dir), 0.0), spec_exp);
         vec3 spec_tint = mix(vec3(1.0), albedo.rgb, metallic);
+        if (water > 0.1) spec_tint = vec3(1.0);
 
         vec3 light_contrib = light.color * light.intensity * atten * shadow * spot_factor * u_light_intensity;
-        total_diffuse += light_contrib * diff * (1.0 - metallic * 0.45);
-        total_specular += light_contrib * spec * spec_tint * (0.25 + metallic * 0.75);
+        total_diffuse += light_contrib * diff * (1.0 - metallic * 0.45) * (1.0 - water * 0.35);
+        total_specular += light_contrib * spec * spec_tint * (0.25 + metallic * 0.75 + water * 1.5);
     }
 
     vec3 final_color = albedo.rgb * total_diffuse + total_specular + emission + total_volumetric;
@@ -326,6 +377,8 @@ out vec4 FragColor;
 uniform sampler2D u_lit_scene;
 uniform sampler2D u_bloom;
 uniform sampler2D u_albedo;
+uniform sampler2D u_normal;
+uniform sampler2D u_occlusion;
 uniform float u_bloom_intensity;
 uniform int u_bloom_enabled;
 uniform int u_reflections_enabled;
@@ -351,16 +404,79 @@ void main()
     bool is_ui = (TexCoords.x >= u_ui_rect.x && TexCoords.x <= u_ui_rect.z &&
                   TexCoords.y >= u_ui_rect.y && TexCoords.y <= u_ui_rect.w);
 
-    // Floor / Puddle reflections (screen-space reflection) - game world only
+    // Screen-Space Planar Floor & Water Reflections (Characters, Monsters, Lasers & Muzzle Flash)
     if (u_reflections_enabled == 1 && !is_ui)
     {
-        // Detect wet metal / water surfaces (bottom half, reflective color)
-        if (TexCoords.y > 0.6)
+        vec4 norm_data = texture(u_normal, TexCoords);
+        vec3 norm = normalize(norm_data.rgb * 2.0 - 1.0);
+        float roughness = norm_data.a;
+        vec4 occ_mat = texture(u_occlusion, TexCoords);
+        float metallic = occ_mat.g;
+        float water = occ_mat.b;
+        vec4 albedo_col = texture(u_albedo, TexCoords);
+
+        float reflect_factor = max(metallic * 0.70, water * 0.95);
+
+        if (reflect_factor > 0.08)
         {
-            float ripple = sin(TexCoords.x * 40.0 + u_time * 3.0) * 0.003;
-            vec2 refl_uv = vec2(TexCoords.x + ripple, TexCoords.y - (TexCoords.y - 0.6) * 0.5);
-            vec3 reflected = texture(u_lit_scene, refl_uv).rgb;
-            color = mix(color, color + reflected * 0.35, 0.25);
+            // Fresnel approximation for planar reflection
+            float fresnel = mix(0.25, 0.95, pow(clamp(1.0 - abs(norm.y), 0.0, 1.0), 3.0));
+
+            // Animated water rippling or brushed metal micro-distortion
+            vec2 ripple = vec2(0.0);
+            if (water > 0.1)
+            {
+                ripple.x = (sin(TexCoords.x * 65.0 + u_time * 4.0) + cos(TexCoords.y * 45.0 + u_time * 3.0)) * 0.0035 * water;
+                ripple.y = (cos(TexCoords.x * 55.0 - u_time * 3.5) + sin(TexCoords.y * 35.0 + u_time * 2.5)) * 0.0020 * water;
+            }
+            else if (metallic > 0.3)
+            {
+                ripple.x = sin(TexCoords.x * 240.0) * 0.0006 * roughness;
+            }
+
+            // Find surface contact edge (search upward a short distance to locate floor top)
+            float y_surface = TexCoords.y;
+            for (int i = 1; i <= 8; i++)
+            {
+                float test_y = TexCoords.y - float(i) * 0.004;
+                vec4 test_mat = texture(u_occlusion, vec2(TexCoords.x, test_y));
+                if (test_mat.g < 0.20 && test_mat.b < 0.08)
+                {
+                    y_surface = test_y + 0.002;
+                    break;
+                }
+            }
+
+            float depth = TexCoords.y - y_surface;
+            if (depth >= 0.0 && depth < 0.28)
+            {
+                float refl_y = y_surface - depth + ripple.y;
+                float refl_x = TexCoords.x + ripple.x;
+
+                if (refl_y >= 0.0 && refl_y <= 1.0 && refl_x >= 0.0 && refl_x <= 1.0)
+                {
+                    // Roughness blur across reflection
+                    float blur = roughness * 0.006;
+                    vec3 refl_obj = texture(u_lit_scene, vec2(refl_x, refl_y)).rgb * 0.50
+                                  + texture(u_lit_scene, vec2(refl_x - blur, refl_y)).rgb * 0.25
+                                  + texture(u_lit_scene, vec2(refl_x + blur, refl_y)).rgb * 0.25;
+
+                    // Falloff with vertical distance from floor
+                    float dist_falloff = clamp(1.0 - (depth / 0.28), 0.0, 1.0);
+                    dist_falloff = dist_falloff * dist_falloff;
+
+                    // Color tint: metals reflect with albedo hue, water reflects neutrally with caustics
+                    vec3 refl_tint = mix(vec3(0.95, 0.98, 1.0), albedo_col.rgb * 1.3, metallic);
+                    if (water > 0.1)
+                    {
+                        float caustic = 0.88 + 0.24 * sin(TexCoords.x * 80.0 + TexCoords.y * 80.0 + u_time * 5.0);
+                        refl_obj *= caustic;
+                    }
+
+                    float blend_weight = reflect_factor * fresnel * dist_falloff;
+                    color = mix(color, color + refl_obj * refl_tint * 0.85, clamp(blend_weight, 0.0, 0.85));
+                }
+            }
         }
     }
 
