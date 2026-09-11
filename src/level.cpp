@@ -40,6 +40,7 @@
 #include "cop.h"
 #include "nfserver.h"
 #include "lisp_gc.h"
+#include "remaster/remaster_timing.h"
 
 level *current_level;
 
@@ -589,8 +590,8 @@ void level::interpolate_draw_objects(view *v)
   {
     old_x=o->x;
     old_y=o->y;
-    o->x=(o->last_x+o->x)/2;
-    o->y=(o->last_y+o->y)/2;
+    o->x=RemasterTiming::get().interpolate(o->last_x, o->x);
+    o->y=RemasterTiming::get().interpolate(o->last_y, o->y);
     o->last_x=old_x;
     o->last_y=old_y;
   }

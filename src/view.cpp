@@ -40,6 +40,7 @@
 #include "sbar.h"
 #include "nfserver.h"
 #include "chat.h"
+#include "remaster/remaster_timing.h"
 
 #define SHIFT_DOWN_DEFAULT 24
 #define SHIFT_RIGHT_DEFAULT 0
@@ -138,8 +139,8 @@ int32_t view::interpolated_xoff()
     if (!m_focus)
         return pan_x;
 
-    return Max(0, (m_lastlastpos.x + m_lastpos.x) / 2
-                    - (m_bb.x - m_aa.x + 1) / 2 + m_shift.x + pan_x);
+    int interp_x = RemasterTiming::get().interpolate(m_lastlastpos.x, m_lastpos.x);
+    return Max(0, interp_x - (m_bb.x - m_aa.x + 1) / 2 + m_shift.x + pan_x);
 }
 
 int32_t view::yoff()
@@ -155,8 +156,8 @@ int32_t view::interpolated_yoff()
     if (!m_focus)
         return pan_y;
 
-    return Max(0, (m_lastlastpos.y + m_lastpos.y) / 2
-                    - (m_bb.y - m_aa.y + 1) / 2 - m_shift.y + pan_y);
+    int interp_y = RemasterTiming::get().interpolate(m_lastlastpos.y, m_lastpos.y);
+    return Max(0, interp_y - (m_bb.y - m_aa.y + 1) / 2 - m_shift.y + pan_y);
 }
 
 

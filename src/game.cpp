@@ -40,6 +40,8 @@
 
 #include "dev.h"
 #include "game.h"
+#include "remaster/remaster_timing.h"
+#include "remaster/remaster_config.h"
 
 #include "id.h"
 #include "timing.h"
@@ -1534,12 +1536,8 @@ void Game::update_screen()
       {
         if(f->drawable())
     {
-      if(interpolate_draw)
-      {
-            draw_map(f, 1);
-        wm->flush_screen();
-      }
-          draw_map(f, 0);
+      bool do_interp = interpolate_draw || (RemasterConfig::get().enabled && RemasterConfig::get().high_fps);
+      draw_map(f, do_interp ? 1 : 0);
     }
       }
       if(current_automap)
@@ -2438,6 +2436,7 @@ int main(int argc, char *argv[])
 
       Uint32 current_tick = SDL_GetTicks();
       Uint32 physics_frame_time = current_tick - last_physics_tick_time;
+      RemasterTiming::get().update_timing(current_tick, last_physics_tick_time, settings.physics_update);
       bool physics_step = physics_frame_time >= settings.physics_update || g->no_delay; // if enough time has passed, we should do a physics step
 
       if (physics_frame_time > 100)
