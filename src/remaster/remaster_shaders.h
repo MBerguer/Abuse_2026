@@ -10,11 +10,13 @@ layout (location = 0) in vec2 aPos;
 layout (location = 1) in vec2 aTexCoords;
 
 out vec2 TexCoords;
+uniform float u_flip_y;
 
 void main()
 {
     TexCoords = aTexCoords;
-    gl_Position = vec4(aPos.x, aPos.y, 0.0, 1.0);
+    float y = (u_flip_y > 0.5) ? -aPos.y : aPos.y;
+    gl_Position = vec4(aPos.x, y, 0.0, 1.0);
 }
 )";
 
@@ -100,9 +102,8 @@ void main()
         gEmission = vec4(0.0, 0.0, 0.0, 1.0);
     }
 
-    // Occlusion map for 2D Ray Tracing: solid structures cast shadows
-    float edge = abs(l - r) + abs(d - u);
-    float occ = (edge > 0.18 || (lum < 0.08 && col.a > 0.5)) ? 1.0 : 0.0;
+    // Occlusion map for 2D Ray Tracing: solid dense geometry casts shadows
+    float occ = (lum < 0.03 && col.a > 0.8) ? 1.0 : 0.0;
     gOcclusion = vec4(vec3(occ), 1.0);
 }
 )";
@@ -148,9 +149,9 @@ float trace_shadow(vec2 frag_pos, vec2 light_pos, float light_radius)
     int steps = (u_shadow_quality == 2) ? 28 : (u_shadow_quality == 1 ? 16 : 8);
     float step_size = dist / float(steps);
     float shadow = 1.0;
-    float min_dist_factor = 1.0;
 
-    for (int i = 1; i < steps; i++)
+    // Start from step 2 to avoid self-shadowing at the surface
+    for (int i = 2; i < steps; i++)
     {
         vec2 sample_pos = frag_pos + dir * (float(i) * step_size);
         float occ = texture(u_occlusion, sample_pos).r;
@@ -161,7 +162,7 @@ float trace_shadow(vec2 frag_pos, vec2 light_pos, float light_radius)
                 // Soft shadow penumbra approximation based on distance
                 float current_dist = float(i) * step_size;
                 float penumbra = (dist - current_dist) / dist;
-                shadow = min(shadow, penumbra * 0.4);
+                shadow = min(shadow, penumbra * 0.55);
                 if (shadow <= 0.05) return 0.0;
             }
             else

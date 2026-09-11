@@ -1495,7 +1495,7 @@ Game::Game(int argc, char **argv)
   if(main_net_cfg == NULL || (main_net_cfg->state != net_configuration::SERVER &&
                  main_net_cfg->state != net_configuration::CLIENT))
   {
-    if(!start_edit && !net_start())
+    if(!start_edit && !net_start() && !get_option("-nointro"))
       do_title();
   } else if(main_net_cfg && main_net_cfg->state == net_configuration::SERVER)
   {
@@ -1510,6 +1510,14 @@ Game::Game(int argc, char **argv)
     set_frame_size(0);
   state = START_STATE;         // first set the state to one that has windows
 
+  if (get_option("-run") && level_file[0])
+  {
+    the_game->load_level(level_file);
+    start_running = 1;
+    for (view *v = player_list; v; v = v->next)
+      if (v->m_focus)
+        v->reset_player();
+  }
 
   if(start_running)
     set_state(RUN_STATE);

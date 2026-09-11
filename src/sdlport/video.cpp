@@ -40,6 +40,8 @@
 #include "remaster/remaster_gl.h"
 #include "remaster/remaster_config.h"
 #include "remaster/remaster_lighting.h"
+#include "game.h"
+#include "level.h"
 
 extern view *player_list;
 
@@ -487,18 +489,38 @@ void update_window_done()
 
     if (gl_context && RemasterGL::is_initialized())
     {
-        if (RemasterConfig::get().enabled && player_list)
+        bool in_gameplay = (the_game && (the_game->state == RUN_STATE || the_game->state == PAUSE_STATE) && current_level);
+
+        if (RemasterConfig::get().enabled && in_gameplay && player_list)
         {
+            int p_world_x = player_list->x_center();
+            int p_world_y = player_list->y_center() - 16; // Player chest / weapon muzzle height
+            int aim_world_x = player_list->pointer_x;
+            int aim_world_y = player_list->pointer_y;
+
+            ivec2 p_screen = the_game ? the_game->GameToMouse(ivec2(p_world_x, p_world_y), player_list)
+                                      : ivec2(p_world_x - player_list->xoff(), p_world_y - player_list->yoff());
+            ivec2 aim_screen = the_game ? the_game->GameToMouse(ivec2(aim_world_x, aim_world_y), player_list)
+                                        : ivec2(aim_world_x - player_list->xoff(), aim_world_y - player_list->yoff());
+
+            if (aim_world_x == 0 && aim_world_y == 0)
+            {
+                aim_screen = ivec2(p_screen.x + 120, p_screen.y);
+            }
+
             RemasterLighting::get().update_frame_lights(
                 player_list->xoff(), player_list->yoff(), xres, yres,
-                player_list->x_center() - player_list->xoff(),
-                player_list->y_center() - player_list->yoff(),
-                player_list->pointer_x, player_list->pointer_y,
+                p_screen.x, p_screen.y,
+                aim_screen.x, aim_screen.y,
                 player_list->b1_suggestion != 0
             );
         }
+        else
+        {
+            RemasterLighting::get().clear();
+        }
 
-        RemasterGL::render_frame(screen->pixels, xres, yres, win_w, win_h);
+        RemasterGL::render_frame(screen->pixels, xres, yres, win_w, win_h, in_gameplay);
         SDL_GL_SwapWindow(window);
     }
     else if (renderer && texture)

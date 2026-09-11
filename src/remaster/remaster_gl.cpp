@@ -281,6 +281,7 @@ void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, in
     glViewport(vp_x, vp_y, vp_w, vp_h);
 
     glUseProgram(s_classic_prog);
+    glUniform1f(glGetUniformLocation(s_classic_prog, "u_flip_y"), 0.0f);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_source_texture);
     glUniform1i(glGetUniformLocation(s_classic_prog, "u_screen"), 0);
@@ -292,7 +293,52 @@ void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, in
     RemasterHUD::get().render(window_w, window_h);
 }
 
-void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h)
+void RemasterGL::capture_screenshot(const char *filepath, int window_w, int window_h)
+{
+    std::vector<uint8_t> pixels(window_w * window_h * 4);
+    glReadPixels(0, 0, window_w, window_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+    uint32_t row_size = ((window_w * 3 + 3) / 4) * 4;
+    uint32_t image_size = row_size * window_h;
+    uint32_t file_size = 54 + image_size;
+
+    uint8_t header[54] = {
+        'B', 'M',
+        static_cast<uint8_t>(file_size), static_cast<uint8_t>(file_size >> 8),
+        static_cast<uint8_t>(file_size >> 16), static_cast<uint8_t>(file_size >> 24),
+        0, 0, 0, 0,
+        54, 0, 0, 0,
+        40, 0, 0, 0,
+        static_cast<uint8_t>(window_w), static_cast<uint8_t>(window_w >> 8),
+        static_cast<uint8_t>(window_w >> 16), static_cast<uint8_t>(window_w >> 24),
+        static_cast<uint8_t>(window_h), static_cast<uint8_t>(window_h >> 8),
+        static_cast<uint8_t>(window_h >> 16), static_cast<uint8_t>(window_h >> 24),
+        1, 0, 24, 0,
+        0, 0, 0, 0,
+        static_cast<uint8_t>(image_size), static_cast<uint8_t>(image_size >> 8),
+        static_cast<uint8_t>(image_size >> 16), static_cast<uint8_t>(image_size >> 24),
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    FILE *f = fopen(filepath, "wb");
+    if (!f) return;
+    fwrite(header, 1, 54, f);
+    std::vector<uint8_t> row(row_size, 0);
+    for (int y = 0; y < window_h; y++)
+    {
+        for (int x = 0; x < window_w; x++)
+        {
+            int src_idx = (y * window_w + x) * 4;
+            row[x * 3 + 0] = pixels[src_idx + 2]; // B
+            row[x * 3 + 1] = pixels[src_idx + 1]; // G
+            row[x * 3 + 2] = pixels[src_idx + 0]; // R
+        }
+        fwrite(row.data(), 1, row_size, f);
+    }
+    fclose(f);
+}
+
+void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h, bool in_gameplay)
 {
     s_time += 0.01667f;
     auto &cfg = RemasterConfig::get();
@@ -318,6 +364,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(s_gbuffer_prog);
+    glUniform1f(glGetUniformLocation(s_gbuffer_prog, "u_flip_y"), 1.0f);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_source_texture);
     glUniform1i(glGetUniformLocation(s_gbuffer_prog, "u_scene"), 0);
@@ -332,6 +379,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(s_raytracing_prog);
+    glUniform1f(glGetUniformLocation(s_raytracing_prog, "u_flip_y"), 1.0f);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_g_albedo);
@@ -350,8 +398,8 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_occlusion"), 3);
 
     // Bind Lights
-    const auto &lights = RemasterLighting::get().get_lights();
-    int num_lights = std::min((int)lights.size(), RemasterLighting::MAX_LIGHTS);
+    const auto &lights = in_gameplay ? RemasterLighting::get().get_lights() : std::vector<GPULight>{};
+    int num_lights = in_gameplay ? std::min((int)lights.size(), RemasterLighting::MAX_LIGHTS) : 0;
     glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_num_lights"), num_lights);
 
     for (int i = 0; i < num_lights; i++)
@@ -368,12 +416,26 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
         glUniform1f(glGetUniformLocation(s_raytracing_prog, (base + "spot_cutoff").c_str()), lights[i].spot_cutoff);
     }
 
-    glUniform3f(glGetUniformLocation(s_raytracing_prog, "u_ambient_color"), 0.12f, 0.14f, 0.18f); // Moody industrial ambient
-    glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_raytracing_enabled"), cfg.raytracing ? 1 : 0);
-    glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_soft_shadows"), cfg.soft_shadows ? 1 : 0);
-    glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_shadow_quality"), cfg.shadow_quality);
-    glUniform1f(glGetUniformLocation(s_raytracing_prog, "u_light_intensity"), cfg.light_intensity);
-    glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_volumetric_enabled"), cfg.volumetric_fog ? 1 : 0);
+    if (in_gameplay)
+    {
+        float amb = 0.70f * cfg.ambient_intensity;
+        glUniform3f(glGetUniformLocation(s_raytracing_prog, "u_ambient_color"), amb * 0.95f, amb, amb * 1.05f);
+        glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_raytracing_enabled"), cfg.raytracing ? 1 : 0);
+        glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_soft_shadows"), cfg.soft_shadows ? 1 : 0);
+        glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_shadow_quality"), cfg.shadow_quality);
+        glUniform1f(glGetUniformLocation(s_raytracing_prog, "u_light_intensity"), cfg.light_intensity);
+        glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_volumetric_enabled"), cfg.volumetric_fog ? 1 : 0);
+    }
+    else
+    {
+        // Menus / Title Screen / Intro: 100% full bright ambient, no shadow darkness
+        glUniform3f(glGetUniformLocation(s_raytracing_prog, "u_ambient_color"), 1.0f, 1.0f, 1.0f);
+        glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_raytracing_enabled"), 0);
+        glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_soft_shadows"), 0);
+        glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_shadow_quality"), 0);
+        glUniform1f(glGetUniformLocation(s_raytracing_prog, "u_light_intensity"), 1.0f);
+        glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_volumetric_enabled"), 0);
+    }
 
     render_quad();
 
@@ -381,6 +443,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     if (cfg.bloom)
     {
         glUseProgram(s_blur_prog);
+        glUniform1f(glGetUniformLocation(s_blur_prog, "u_flip_y"), 1.0f);
         int bw = std::max(1, src_w / 2);
         int bh = std::max(1, src_h / 2);
         glViewport(0, 0, bw, bh);
@@ -429,6 +492,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     glViewport(vp_x, vp_y, vp_w, vp_h);
 
     glUseProgram(s_composite_prog);
+    glUniform1f(glGetUniformLocation(s_composite_prog, "u_flip_y"), 0.0f);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_lit_texture);
@@ -444,11 +508,30 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
 
     glUniform1f(glGetUniformLocation(s_composite_prog, "u_bloom_intensity"), cfg.bloom_intensity);
     glUniform1i(glGetUniformLocation(s_composite_prog, "u_bloom_enabled"), cfg.bloom ? 1 : 0);
-    glUniform1i(glGetUniformLocation(s_composite_prog, "u_reflections_enabled"), cfg.reflections ? 1 : 0);
+    glUniform1i(glGetUniformLocation(s_composite_prog, "u_reflections_enabled"), (in_gameplay && cfg.reflections) ? 1 : 0);
     glUniform1f(glGetUniformLocation(s_composite_prog, "u_time"), s_time);
 
     render_quad();
 
     // 6. Modern Widescreen HUD & In-Game Dashboard Pass
     RemasterHUD::get().render(window_w, window_h);
+
+    // Automated test screenshot dumper
+    static int s_frame_counter = 0;
+    s_frame_counter++;
+    const char *dump_env = getenv("ABUSE_DUMP_FRAME");
+    if (dump_env)
+    {
+        int target = atoi(dump_env);
+        if (s_frame_counter >= target)
+        {
+            const char *out_path = getenv("ABUSE_DUMP_PATH");
+            std::string final_png = out_path ? out_path : "/Users/mberguer/.gemini/antigravity/brain/7829aad7-21ac-4465-ba25-1fade3429f56/test_screen.png";
+            capture_screenshot("/tmp/abuse_debug.bmp", window_w, window_h);
+            std::string cmd = "sips -s format png /tmp/abuse_debug.bmp --out \"" + final_png + "\" >/dev/null 2>&1";
+            system(cmd.c_str());
+            printf("[RemasterGL] Captured frame %d to %s\n", s_frame_counter, final_png.c_str());
+            exit(0);
+        }
+    }
 }

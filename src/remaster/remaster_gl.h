@@ -18,8 +18,9 @@ public:
     static void shutdown();
     static void resize(int screen_w, int screen_h);
 
-    static void render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h);
+    static void render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h, bool in_gameplay = true);
     static void render_classic(const void *pixel_data, int src_w, int src_h, int window_w, int window_h);
+    static void capture_screenshot(const char *filepath, int window_w, int window_h);
 
     static void render_quad();
     static bool compile_shader(GLuint &program, const char *vs_src, const char *fs_src);
