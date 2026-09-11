@@ -115,6 +115,8 @@ public:
     {
          return this->m_pos;
     }
+    image *GetMouseVisual() const { return m_sprite ? m_sprite->m_visual : nullptr; }
+    ivec2 GetMouseCenter() const { return m_center; }
     void SetIgnoreWheelEvents(bool ignore)
     {
         m_ignore_wheel_events = ignore;

@@ -357,7 +357,7 @@ void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, in
     render_quad();
 
     // Remaster HUD & Notification pass
-    RemasterHUD::get().render(window_w, window_h);
+    RemasterHUD::get().render(window_w, window_h, 0, 0, window_w, window_h, src_w, src_h);
 
     check_dump_screenshot(window_w, window_h);
 }
@@ -544,7 +544,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     render_quad();
 
     // 6. Modern Widescreen HUD & In-Game Dashboard Pass
-    RemasterHUD::get().render(window_w, window_h);
+    RemasterHUD::get().render(window_w, window_h, vp_x, vp_y, vp_w, vp_h, src_w, src_h);
 
     check_dump_screenshot(window_w, window_h);
 }

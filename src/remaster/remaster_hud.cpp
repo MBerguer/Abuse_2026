@@ -3,12 +3,20 @@
 #include "remaster_lighting.h"
 #include "remaster_gl.h"
 #include "remaster_shaders.h"
+#include "common.h"
+#include "image.h"
+#include "palette.h"
+#include "jwindow.h"
+#include "event.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
 
 extern unsigned char fnt6x13[192 * 104];
+extern WindowManager *wm;
+extern palette *pal;
+extern int xres, yres;
 
 namespace
 {
@@ -299,7 +307,42 @@ void RemasterHUD::draw_dashboard()
     draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, panel_x + 16, cur_y + 9, "CONTROLS: [F8] Gamma  |  [F11] Remaster  |  [F12] Close", text_cyan, 1, false);
 }
 
-void RemasterHUD::render(int window_w, int window_h)
+void RemasterHUD::draw_cursor(int dst_x0, int dst_y0, int dst_w, int dst_h, void *im_ptr, void *pal_ptr)
+{
+    image *im = static_cast<image *>(im_ptr);
+    palette *p = static_cast<palette *>(pal_ptr);
+    if (!im || !p || dst_w <= 0 || dst_h <= 0) return;
+
+    int im_w = im->Size().x;
+    int im_h = im->Size().y;
+    if (im_w <= 0 || im_h <= 0) return;
+
+    for (int dy = 0; dy < dst_h; dy++)
+    {
+        int sy = dy * im_h / dst_h;
+        int py = dst_y0 + dy;
+        if (py < 0 || py >= m_canvas_h) continue;
+
+        const uint8_t *src_row = im->scan_line(sy);
+        for (int dx = 0; dx < dst_w; dx++)
+        {
+            int sx = dx * im_w / dst_w;
+            int px = dst_x0 + dx;
+            if (px < 0 || px >= m_canvas_w) continue;
+
+            uint8_t c = src_row[sx];
+            if (c == 0) continue; // transparent pixel
+
+            uint8_t r = p->red(c);
+            uint8_t g = p->green(c);
+            uint8_t b = p->blue(c);
+
+            m_pixels[py * m_canvas_w + px] = make_rgba(r, g, b, 255);
+        }
+    }
+}
+
+void RemasterHUD::render(int window_w, int window_h, int vp_x, int vp_y, int vp_w, int vp_h, int src_w, int src_h)
 {
     if (!m_initialized)
         return;
@@ -317,8 +360,9 @@ void RemasterHUD::render(int window_w, int window_h)
 
     bool need_notification = (cfg.notification_timer > 0.0f && !cfg.notification_text.empty());
     bool need_dashboard = cfg.show_hud_overlay;
+    bool need_cursor = (cfg.enabled && wm && wm->has_mouse() && wm->GetMouseVisual() != nullptr);
 
-    if (!need_notification && !need_dashboard)
+    if (!need_notification && !need_dashboard && !need_cursor)
         return;
 
     // Clear canvas
@@ -329,6 +373,29 @@ void RemasterHUD::render(int window_w, int window_h)
 
     if (need_notification)
         draw_notification(alpha);
+
+    if (need_cursor)
+    {
+        image *mv = wm->GetMouseVisual();
+        ivec2 mpos = wm->GetMousePos();
+        ivec2 mcenter = wm->GetMouseCenter();
+
+        if (vp_w <= 0) vp_w = window_w;
+        if (vp_h <= 0) vp_h = window_h;
+        if (src_w <= 0) src_w = xres > 0 ? xres : 320;
+        if (src_h <= 0) src_h = yres > 0 ? yres : 200;
+
+        float win_x = (float)vp_x + (float)(mpos.x - mcenter.x) * (float)vp_w / (float)src_w;
+        float win_y = (float)vp_y + (float)(mpos.y - mcenter.y) * (float)vp_h / (float)src_h;
+
+        int can_x = (int)std::round(win_x * (float)m_canvas_w / (float)window_w);
+        int can_y = (int)std::round(win_y * (float)m_canvas_h / (float)window_h);
+
+        int can_w = std::max(1, (int)std::round((float)mv->Size().x * ((float)vp_w / (float)src_w) * ((float)m_canvas_w / (float)window_w)));
+        int can_h = std::max(1, (int)std::round((float)mv->Size().y * ((float)vp_h / (float)src_h) * ((float)m_canvas_h / (float)window_h)));
+
+        draw_cursor(can_x, can_y, can_w, can_h, mv, pal);
+    }
 
     // Upload to OpenGL texture
     glBindTexture(GL_TEXTURE_2D, m_texture);

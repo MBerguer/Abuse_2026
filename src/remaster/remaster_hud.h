@@ -21,7 +21,7 @@ public:
     }
 
     bool init();
-    void render(int window_w, int window_h);
+    void render(int window_w, int window_h, int vp_x = 0, int vp_y = 0, int vp_w = 0, int vp_h = 0, int src_w = 0, int src_h = 0);
     void cleanup();
 
 private:
@@ -31,6 +31,7 @@ private:
     void update_canvas(int w, int h);
     void draw_notification(float alpha);
     void draw_dashboard();
+    void draw_cursor(int dst_x0, int dst_y0, int dst_w, int dst_h, void *im_ptr, void *pal_ptr);
 
     GLuint m_texture = 0;
     GLuint m_prog = 0;

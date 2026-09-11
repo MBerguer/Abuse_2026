@@ -109,17 +109,26 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
             dy = 0.0f;
         }
 
-        // Player subtle ambient presence
-        add_point_light(px, py, 0.08f, 1.0f, 0.98f, 0.95f, 0.18f, 0.45f);
+        // 2a. Player subtle body presence (dim ambient glow around character)
+        add_point_light(px, py, 0.08f, 1.0f, 0.98f, 0.95f, 0.10f, 0.35f);
 
-        // Dynamic muzzle flash when firing
+        // 2b. Tactical Weapon-Mounted Directional Flashlight (follows aim cone)
+        float spot_intensity = player_firing ? 2.6f : 1.75f;
+        float spot_radius = player_firing ? 0.60f : 0.52f;
+        float spot_cutoff = 0.68f; // ~48 degree realistic tactical cone
+        add_spot_light(px + dx * 0.025f, py + dy * 0.025f, 0.05f,
+                       1.0f, 0.97f, 0.92f,
+                       spot_radius, spot_intensity,
+                       dx, dy, spot_cutoff);
+
+        // 2c. Dynamic muzzle flash burst when firing
         if (player_firing)
         {
-            add_point_light(px + dx * 0.05f, py + dy * 0.05f, 0.04f, 1.0f, 0.92f, 0.6f, 0.35f, 2.5f);
+            add_point_light(px + dx * 0.045f, py + dy * 0.045f, 0.04f, 1.0f, 0.90f, 0.45f, 0.28f, 3.2f);
         }
     }
 
-    // 3. Dynamic lights from active weapon projectiles, rockets, lasers, and explosions
+    // 3. Dynamic colored lights from active weapon projectiles, rockets, lasers, and explosions
     extern level *current_level;
     extern char **object_names;
     extern int total_objects;
@@ -140,17 +149,41 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
             if (o->otype >= 0 && o->otype < total_objects && object_names && object_names[o->otype])
             {
                 const char *name = object_names[o->otype];
-                if (strstr(name, "rocket") || strstr(name, "fire") || strstr(name, "gren"))
+
+                // Rockets / Missiles: intense fiery flame and smoke trail
+                if (strcasestr(name, "rocket"))
                 {
-                    add_point_light(ox, oy, 0.05f, 1.0f, 0.6f, 0.15f, 0.22f, 2.2f);
+                    add_point_light(ox, oy, 0.05f, 1.0f, 0.55f, 0.12f, 0.22f, 2.8f);
                 }
-                else if (strstr(name, "laser") || strstr(name, "plasma") || strstr(name, "nova"))
+                // Grenades: pulsing green/yellow phosphorescent light
+                else if (strcasestr(name, "gren"))
                 {
-                    add_point_light(ox, oy, 0.04f, 0.2f, 0.8f, 1.0f, 0.25f, 2.5f);
+                    add_point_light(ox, oy, 0.05f, 0.35f, 1.0f, 0.20f, 0.18f, 2.2f);
                 }
-                else if (strstr(name, "explo"))
+                // Plasma shots: bright electric cyan/blue ray
+                else if (strcasestr(name, "plasma"))
                 {
-                    add_point_light(ox, oy, 0.06f, 1.0f, 0.85f, 0.4f, 0.45f, 3.5f);
+                    add_point_light(ox, oy, 0.04f, 0.15f, 0.75f, 1.0f, 0.24f, 3.0f);
+                }
+                // Lasers and rifle bullets: vibrant red/amber beam light
+                else if (strcasestr(name, "laser") || strcasestr(name, "bullet"))
+                {
+                    add_point_light(ox, oy, 0.04f, 1.0f, 0.20f, 0.12f, 0.16f, 2.4f);
+                }
+                // Firebombs: intense burning orange-yellow fire
+                else if (strcasestr(name, "fire"))
+                {
+                    add_point_light(ox, oy, 0.05f, 1.0f, 0.45f, 0.05f, 0.25f, 3.2f);
+                }
+                // Discs and energy blades: violet/magenta glow
+                else if (strcasestr(name, "dfris") || strcasestr(name, "lsaber"))
+                {
+                    add_point_light(ox, oy, 0.05f, 0.85f, 0.25f, 1.0f, 0.20f, 2.6f);
+                }
+                // Explosions: large expanding warm flash lighting up surrounding architecture
+                else if (strcasestr(name, "explo") || strcasestr(name, "exp_"))
+                {
+                    add_point_light(ox, oy, 0.06f, 1.0f, 0.85f, 0.40f, 0.45f, 4.2f);
                 }
             }
         }

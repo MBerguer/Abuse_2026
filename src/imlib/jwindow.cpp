@@ -22,6 +22,7 @@
 #include "event.h"
 #include "filter.h"
 #include "jwindow.h"
+#include "remaster/remaster_config.h"
 
 static int jw_left = 3, jw_right = 3, jw_top = 2, jw_bottom = 3;
 
@@ -308,8 +309,9 @@ Jwindow * WindowManager::CreateWindow(ivec2 pos, ivec2 size,
 void WindowManager::flush_screen()
 {
     ivec2 m1(0, 0);
+    bool draw_software_mouse = has_mouse() && !RemasterConfig::get().enabled;
  
-    if (has_mouse())
+    if (draw_software_mouse)
     {
         m1 = m_pos - m_center;
         ivec2 m2 = m1 + m_sprite->m_visual->Size();
@@ -323,7 +325,7 @@ void WindowManager::flush_screen()
             m_surf->DeleteDirty(p->m_pos, p->m_pos + p->m_size);
     update_dirty(m_surf);
 
-    if (has_mouse())
+    if (draw_software_mouse)
         m_surf->PutImage(m_sprite->m_save, m1);
 
     for (Jwindow *p = m_first; p; p = p->next)
@@ -331,7 +333,7 @@ void WindowManager::flush_screen()
         if (p->is_hidden())
             continue;
 
-        if (has_mouse())
+        if (draw_software_mouse)
         {
             m_sprite->m_save->PutPart(p->m_surf, ivec2(0, 0), m1 - p->m_pos,
                                       m1 - p->m_pos + m_sprite->m_visual->Size());
@@ -344,7 +346,7 @@ void WindowManager::flush_screen()
                 p->m_surf->DeleteDirty(q->m_pos - p->m_pos,
                                        q->m_pos - p->m_pos + q->m_size);
         update_dirty(p->m_surf, p->m_pos.x, p->m_pos.y);
-        if (has_mouse())
+        if (draw_software_mouse)
             p->m_surf->PutImage(m_sprite->m_save, m1 - p->m_pos, 0);
     }
 }

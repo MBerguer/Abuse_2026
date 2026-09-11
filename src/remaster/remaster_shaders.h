@@ -106,10 +106,20 @@ void main()
     float dx = (l - r) * u_normal_strength;
     float dy = (d - u) * u_normal_strength;
     vec3 n = normalize(vec3(dx, dy, 1.0));
-    gNormal = vec4(n * 0.5 + 0.5, 1.0);
+
+    // Material detection: metallic and roughness for PBR lighting response
+    float lum = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
+    float max_c = max(max(col.r, col.g), col.b);
+    float min_c = min(min(col.r, col.g), col.b);
+    float sat = (max_c > 0.01) ? (max_c - min_c) / max_c : 0.0;
+
+    // Metallic surfaces (metal pipes, armor, rails, machinery): low saturation, mid-to-high luminance
+    float metallic = clamp((1.0 - sat * 1.5) * smoothstep(0.12, 0.45, lum), 0.0, 0.85);
+    float roughness = clamp(0.20 + sat * 0.55 + (1.0 - lum) * 0.35, 0.15, 0.90);
+
+    gNormal = vec4(n * 0.5 + 0.5, roughness);
 
     // Emission detection: Lasers, plasma, computer screens, sparks, fire
-    float lum = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
     bool isLaser = (col.r > 0.65 && col.g < 0.35 && col.b < 0.35);
     bool isPlasma = (col.g > 0.65 && col.r < 0.4);
     bool isElectric = (col.b > 0.65 && col.g > 0.5);
@@ -126,7 +136,7 @@ void main()
 
     // Occlusion map for 2D Ray Tracing: solid dense geometry casts shadows
     float occ = (lum < 0.03 && col.a > 0.8) ? 1.0 : 0.0;
-    gOcclusion = vec4(vec3(occ), 1.0);
+    gOcclusion = vec4(occ, metallic, 0.0, 1.0);
 }
 )";
 
@@ -219,8 +229,10 @@ void main()
         return;
     }
 
-    vec3 normal_raw = texture(u_normal, TexCoords).rgb * 2.0 - 1.0;
-    vec3 normal = normalize(normal_raw);
+    vec4 norm_data = texture(u_normal, TexCoords);
+    vec3 normal = normalize(norm_data.rgb * 2.0 - 1.0);
+    float roughness = norm_data.a;
+    float metallic = texture(u_occlusion, TexCoords).g;
     vec3 emission = texture(u_emission, TexCoords).rgb;
 
     vec3 total_diffuse = u_ambient_color;
@@ -236,7 +248,7 @@ void main()
 
         if (dist_2d > light.radius) continue;
 
-        // Spot light check (e.g. player aim cone / flashlight)
+        // Spot light check (e.g. player weapon flashlight)
         float spot_factor = 1.0;
         if (light.is_spot == 1)
         {
@@ -244,37 +256,39 @@ void main()
             float angle_cos = dot(to_pixel, normalize(light.spot_dir));
             if (angle_cos < light.spot_cutoff)
             {
-                spot_factor = smoothstep(light.spot_cutoff - 0.1, light.spot_cutoff, angle_cos);
+                spot_factor = smoothstep(light.spot_cutoff - 0.14, light.spot_cutoff, angle_cos);
             }
         }
 
-        // Distance attenuation
+        // Distance attenuation (smooth Hermite cubic falloff)
         float atten = clamp(1.0 - (dist_2d / light.radius), 0.0, 1.0);
-        atten = atten * atten * (3.0 - 2.0 * atten); // smooth falloff
+        atten = atten * atten * (3.0 - 2.0 * atten);
 
         // Raymarched soft shadow
         float shadow = trace_shadow(TexCoords, light_screen, light.radius);
 
-        // Subtle atmospheric in-scattering
+        // Volumetric atmospheric in-scattering inside beam and light halo
         if (u_volumetric_enabled == 1 && shadow > 0.01)
         {
-            total_volumetric += light.color * light.intensity * atten * shadow * 0.03;
+            total_volumetric += light.color * light.intensity * atten * shadow * spot_factor * 0.045;
         }
 
-        if (shadow <= 0.001) continue;
+        if (shadow <= 0.001 || spot_factor <= 0.001) continue;
 
         // 3D Direction to light
         vec3 light_dir = normalize(vec3(dir_2d, light.position.z));
         float diff = max(dot(normal, light_dir), 0.0);
 
-        // Specular (Blinn-Phong)
+        // Specular (Blinn-Phong) with material roughness & metallic response
         vec3 view_dir = vec3(0.0, 0.0, 1.0);
         vec3 half_dir = normalize(light_dir + view_dir);
-        float spec = pow(max(dot(normal, half_dir), 0.0), 16.0);
+        float spec_exp = mix(64.0, 6.0, roughness);
+        float spec = pow(max(dot(normal, half_dir), 0.0), spec_exp);
+        vec3 spec_tint = mix(vec3(1.0), albedo.rgb, metallic);
 
         vec3 light_contrib = light.color * light.intensity * atten * shadow * spot_factor * u_light_intensity;
-        total_diffuse += light_contrib * diff;
-        total_specular += light_contrib * spec * 0.4;
+        total_diffuse += light_contrib * diff * (1.0 - metallic * 0.45);
+        total_specular += light_contrib * spec * spec_tint * (0.25 + metallic * 0.75);
     }
 
     vec3 final_color = albedo.rgb * total_diffuse + total_specular + emission + total_volumetric;
