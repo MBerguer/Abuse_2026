@@ -245,6 +245,73 @@ void RemasterGL::render_quad()
     glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
+void RemasterGL::capture_screenshot(const char *filepath, int window_w, int window_h)
+{
+    std::vector<uint8_t> pixels(window_w * window_h * 4);
+    glReadPixels(0, 0, window_w, window_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+    uint32_t row_size = ((window_w * 3 + 3) / 4) * 4;
+    uint32_t image_size = row_size * window_h;
+    uint32_t file_size = 54 + image_size;
+
+    uint8_t header[54] = {
+        'B', 'M',
+        static_cast<uint8_t>(file_size), static_cast<uint8_t>(file_size >> 8),
+        static_cast<uint8_t>(file_size >> 16), static_cast<uint8_t>(file_size >> 24),
+        0, 0, 0, 0,
+        54, 0, 0, 0,
+        40, 0, 0, 0,
+        static_cast<uint8_t>(window_w), static_cast<uint8_t>(window_w >> 8),
+        static_cast<uint8_t>(window_w >> 16), static_cast<uint8_t>(window_w >> 24),
+        static_cast<uint8_t>(window_h), static_cast<uint8_t>(window_h >> 8),
+        static_cast<uint8_t>(window_h >> 16), static_cast<uint8_t>(window_h >> 24),
+        1, 0, 24, 0,
+        0, 0, 0, 0,
+        static_cast<uint8_t>(image_size), static_cast<uint8_t>(image_size >> 8),
+        static_cast<uint8_t>(image_size >> 16), static_cast<uint8_t>(image_size >> 24),
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    FILE *f = fopen(filepath, "wb");
+    if (!f) return;
+    fwrite(header, 1, 54, f);
+    std::vector<uint8_t> row(row_size, 0);
+    for (int y = 0; y < window_h; y++)
+    {
+        for (int x = 0; x < window_w; x++)
+        {
+            int src_idx = (y * window_w + x) * 4;
+            row[x * 3 + 0] = pixels[src_idx + 2]; // B
+            row[x * 3 + 1] = pixels[src_idx + 1]; // G
+            row[x * 3 + 2] = pixels[src_idx + 0]; // R
+        }
+        fwrite(row.data(), 1, row_size, f);
+    }
+    fclose(f);
+}
+
+static void check_dump_screenshot(int window_w, int window_h)
+{
+    static int s_frame_counter = 0;
+    s_frame_counter++;
+    const char *dump_env = getenv("ABUSE_DUMP_FRAME");
+    if (dump_env)
+    {
+        int target = atoi(dump_env);
+        if (s_frame_counter >= target)
+        {
+            const char *out_path = getenv("ABUSE_DUMP_PATH");
+            std::string final_png = out_path ? out_path : "/Users/mberguer/.gemini/antigravity/brain/7829aad7-21ac-4465-ba25-1fade3429f56/test_screen.png";
+            std::string tmp_bmp = "/Users/mberguer/.gemini/antigravity/brain/7829aad7-21ac-4465-ba25-1fade3429f56/scratch/abuse_frame.bmp";
+            RemasterGL::capture_screenshot(tmp_bmp.c_str(), window_w, window_h);
+            std::string cmd = "rm -f \"" + final_png + "\" && sips -s format png \"" + tmp_bmp + "\" --out \"" + final_png + "\" >/dev/null 2>&1";
+            system(cmd.c_str());
+            printf("[RemasterGL] Captured frame %d to %s\n", s_frame_counter, final_png.c_str());
+            exit(0);
+        }
+    }
+}
+
 void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, int window_w, int window_h)
 {
     auto &cfg = RemasterConfig::get();
@@ -291,51 +358,8 @@ void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, in
 
     // Remaster HUD & Notification pass
     RemasterHUD::get().render(window_w, window_h);
-}
 
-void RemasterGL::capture_screenshot(const char *filepath, int window_w, int window_h)
-{
-    std::vector<uint8_t> pixels(window_w * window_h * 4);
-    glReadPixels(0, 0, window_w, window_h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-
-    uint32_t row_size = ((window_w * 3 + 3) / 4) * 4;
-    uint32_t image_size = row_size * window_h;
-    uint32_t file_size = 54 + image_size;
-
-    uint8_t header[54] = {
-        'B', 'M',
-        static_cast<uint8_t>(file_size), static_cast<uint8_t>(file_size >> 8),
-        static_cast<uint8_t>(file_size >> 16), static_cast<uint8_t>(file_size >> 24),
-        0, 0, 0, 0,
-        54, 0, 0, 0,
-        40, 0, 0, 0,
-        static_cast<uint8_t>(window_w), static_cast<uint8_t>(window_w >> 8),
-        static_cast<uint8_t>(window_w >> 16), static_cast<uint8_t>(window_w >> 24),
-        static_cast<uint8_t>(window_h), static_cast<uint8_t>(window_h >> 8),
-        static_cast<uint8_t>(window_h >> 16), static_cast<uint8_t>(window_h >> 24),
-        1, 0, 24, 0,
-        0, 0, 0, 0,
-        static_cast<uint8_t>(image_size), static_cast<uint8_t>(image_size >> 8),
-        static_cast<uint8_t>(image_size >> 16), static_cast<uint8_t>(image_size >> 24),
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    };
-
-    FILE *f = fopen(filepath, "wb");
-    if (!f) return;
-    fwrite(header, 1, 54, f);
-    std::vector<uint8_t> row(row_size, 0);
-    for (int y = 0; y < window_h; y++)
-    {
-        for (int x = 0; x < window_w; x++)
-        {
-            int src_idx = (y * window_w + x) * 4;
-            row[x * 3 + 0] = pixels[src_idx + 2]; // B
-            row[x * 3 + 1] = pixels[src_idx + 1]; // G
-            row[x * 3 + 2] = pixels[src_idx + 0]; // R
-        }
-        fwrite(row.data(), 1, row_size, f);
-    }
-    fclose(f);
+    check_dump_screenshot(window_w, window_h);
 }
 
 void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h,
@@ -522,22 +546,5 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     // 6. Modern Widescreen HUD & In-Game Dashboard Pass
     RemasterHUD::get().render(window_w, window_h);
 
-    // Automated test screenshot dumper
-    static int s_frame_counter = 0;
-    s_frame_counter++;
-    const char *dump_env = getenv("ABUSE_DUMP_FRAME");
-    if (dump_env)
-    {
-        int target = atoi(dump_env);
-        if (s_frame_counter >= target)
-        {
-            const char *out_path = getenv("ABUSE_DUMP_PATH");
-            std::string final_png = out_path ? out_path : "/Users/mberguer/.gemini/antigravity/brain/7829aad7-21ac-4465-ba25-1fade3429f56/test_screen.png";
-            capture_screenshot("/tmp/abuse_debug.bmp", window_w, window_h);
-            std::string cmd = "sips -s format png /tmp/abuse_debug.bmp --out \"" + final_png + "\" >/dev/null 2>&1";
-            system(cmd.c_str());
-            printf("[RemasterGL] Captured frame %d to %s\n", s_frame_counter, final_png.c_str());
-            exit(0);
-        }
-    }
+    check_dump_screenshot(window_w, window_h);
 }
