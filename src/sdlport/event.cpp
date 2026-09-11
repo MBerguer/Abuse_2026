@@ -36,6 +36,7 @@
 #include "sprite.h"
 #include "game.h"
 #include "setup.h"
+#include "remaster/remaster_config.h"
 
 extern SDL_Window *window;
 extern SDL_Surface *surface;
@@ -350,10 +351,29 @@ void EventHandler::SysEvent(Event &ev)
 			ev.key = JK_F10;
 			break;
 
-		case SDLK_F11: // unused	
+		case SDLK_F11: // Toggle Remaster Mode
+			if(ev.type == EV_KEYRELEASE)
+			{
+				RemasterConfig::get().toggle_remaster();
+				if (the_game)
+					the_game->show_help(RemasterConfig::get().notification_text.c_str());
+			}
+			ev.key = JK_F11;
 			break;
 
-		case SDLK_F12: // unused
+		case SDLK_F12: // Toggle Remaster HUD
+			if(ev.type == EV_KEYRELEASE)
+			{
+				RemasterConfig::get().toggle_hud();
+				if (the_game)
+				{
+					if (RemasterConfig::get().show_hud_overlay)
+						the_game->show_help("Remaster Settings Overlay: ON (F11:RT/Classic, F12:Hide)");
+					else
+						the_game->show_help("Remaster Settings Overlay: OFF");
+				}
+			}
+			ev.key = JK_F12;
 			break;
 
 		case SDLK_PRINTSCREEN://grab a screenshot

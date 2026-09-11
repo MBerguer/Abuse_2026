@@ -46,7 +46,9 @@
 #define JK_PAGEUP   282
 #define JK_PAGEDOWN 283
 #define JK_COMMAND  284
-#define JK_MAX_KEY  284
+#define JK_F11      285
+#define JK_F12      286
+#define JK_MAX_KEY  286
 
 // returns a ASCII string describing a key, i.e. "Up Arrow"
 void key_name(int key, char *buffer);

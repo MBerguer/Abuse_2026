@@ -32,6 +32,9 @@ else()
     set_property(TARGET SDL2_mixer::SDL2_mixer PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${SDL2_MIXER_INCLUDE_DIRS}")
 endif()
 
+find_package(OpenGL REQUIRED)
+add_compile_definitions(GL_SILENCE_DEPRECATION)
+
 include(CheckIncludeFiles)
 
 check_include_files(unistd.h HAVE_UNISTD_H)

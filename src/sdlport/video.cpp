@@ -36,9 +36,16 @@
 #include "image.h"
 #include "setup.h"
 #include "errorui.h"
+#include "view.h"
+#include "remaster/remaster_gl.h"
+#include "remaster/remaster_config.h"
+#include "remaster/remaster_lighting.h"
+
+extern view *player_list;
 
 // Core SDL components
 SDL_Window *window = nullptr;
+SDL_GLContext gl_context = nullptr;
 SDL_Renderer *renderer = nullptr;
 SDL_Surface *surface = nullptr; // 8-bit paletted surface for game rendering
 SDL_Surface *screen = nullptr;  // 32-bit RGB surface for final display
@@ -107,8 +114,9 @@ void handle_window_resize()
     if(target_aspect != current_aspect)
         SDL_SetWindowSize(window, window_width, window_height);
 
-    SDL_Rect viewport;
-    SDL_RenderGetViewport(renderer, &viewport);
+    SDL_Rect viewport = {0, 0, window_width, window_height};
+    if (renderer)
+        SDL_RenderGetViewport(renderer, &viewport);
 
     mouse_xscale = (window_width << 16) / xres;
     mouse_yscale = (window_height << 16) / yres;
@@ -179,9 +187,16 @@ void set_mode(int argc, char **argv)
         if (settings.borderless)
             flags |= SDL_WINDOW_BORDERLESS;
 
+        flags |= SDL_WINDOW_OPENGL;
+
+        // Configure OpenGL 3.2+ Core Profile attributes
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
         // Initialize rendering pipeline:
-        // Window -> Renderer -> Texture -> 32-bit screen surface -> 8-bit game surface
-        window = SDL_CreateWindow("Abuse",
+        window = SDL_CreateWindow("Abuse 2026 Remaster",
                                   SDL_WINDOWPOS_CENTERED,
                                   SDL_WINDOWPOS_CENTERED,
                                   settings.screen_width,
@@ -197,25 +212,36 @@ void set_mode(int argc, char **argv)
 
         float scale_factor = static_cast<float>(window_pixel_width) / settings.screen_width;
 
-        uint32_t render_flags = SDL_RENDERER_ACCELERATED;
-        if (settings.vsync)
-            render_flags |= SDL_RENDERER_PRESENTVSYNC;
-
-        renderer = SDL_CreateRenderer(window, -1, render_flags);
-        if (!renderer)
+        // Try creating OpenGL Context
+        gl_context = SDL_GL_CreateContext(window);
+        if (gl_context)
         {
-            renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+            SDL_GL_MakeCurrent(window, gl_context);
+            SDL_GL_SetSwapInterval(settings.vsync ? 1 : 0);
+            RemasterConfig::get().load();
+            RemasterGL::init(xres, yres);
+        }
+        else
+        {
+            uint32_t render_flags = SDL_RENDERER_ACCELERATED;
+            if (settings.vsync)
+                render_flags |= SDL_RENDERER_PRESENTVSYNC;
+
+            renderer = SDL_CreateRenderer(window, -1, render_flags);
             if (!renderer)
             {
-                throw std::runtime_error(SDL_GetError());
+                renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+                if (!renderer)
+                {
+                    throw std::runtime_error(SDL_GetError());
+                }
             }
+
+            SDL_RenderSetScale(renderer, scale_factor, scale_factor);
+            SDL_RenderSetLogicalSize(renderer, xres, yres);
+            SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,
+                        settings.linear_filter ? "1" : "0");
         }
-
-        SDL_RenderSetScale(renderer, scale_factor, scale_factor);
-
-        SDL_RenderSetLogicalSize(renderer, xres, yres);
-        SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,
-                    settings.linear_filter ? "1" : "0");
 
         main_screen = new image(ivec2(xres, yres), nullptr, 2);
         if (!main_screen)
@@ -236,13 +262,12 @@ void set_mode(int argc, char **argv)
             throw std::runtime_error(SDL_GetError());
         }
 
-        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
-                                    SDL_TEXTUREACCESS_STREAMING,
-                                    xres, yres);
-        if (!texture)
+        if (renderer)
         {
-            throw std::runtime_error(SDL_GetError());
-        }        
+            texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                        SDL_TEXTUREACCESS_STREAMING,
+                                        xres, yres);
+        }
 
         handle_window_resize();
         SDL_ShowCursor(0);
@@ -313,6 +338,14 @@ void close_graphics()
     {
         SDL_DestroyRenderer(renderer);
         renderer = nullptr;
+    }
+
+    if (gl_context)
+    {
+        RemasterConfig::get().save();
+        RemasterGL::shutdown();
+        SDL_GL_DeleteContext(gl_context);
+        gl_context = nullptr;
     }
 
     if (window)
@@ -418,9 +451,33 @@ void update_window_done()
     // Convert paletted surface to 32-bit RGB for display
     SDL_BlitSurface(surface, nullptr, screen, nullptr);
 
-    // Update GPU texture and render to display
-    SDL_UpdateTexture(texture, nullptr, screen->pixels, screen->pitch);
-    SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, nullptr, nullptr);
-    SDL_RenderPresent(renderer);
+    int win_w = settings.screen_width;
+    int win_h = settings.screen_height;
+    if (window)
+        SDL_GetWindowSizeInPixels(window, &win_w, &win_h);
+
+    if (gl_context && RemasterGL::is_initialized())
+    {
+        if (RemasterConfig::get().enabled && player_list)
+        {
+            RemasterLighting::get().update_frame_lights(
+                player_list->xoff(), player_list->yoff(), xres, yres,
+                player_list->x_center() - player_list->xoff(),
+                player_list->y_center() - player_list->yoff(),
+                player_list->pointer_x, player_list->pointer_y,
+                player_list->b1_suggestion != 0
+            );
+        }
+
+        RemasterGL::render_frame(screen->pixels, xres, yres, win_w, win_h);
+        SDL_GL_SwapWindow(window);
+    }
+    else if (renderer && texture)
+    {
+        // Update GPU texture and render to display
+        SDL_UpdateTexture(texture, nullptr, screen->pixels, screen->pitch);
+        SDL_RenderClear(renderer);
+        SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+        SDL_RenderPresent(renderer);
+    }
 }

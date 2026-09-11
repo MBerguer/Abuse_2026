@@ -118,6 +118,10 @@ int key_value(char const *buffer)
         return JK_F9;
     if( strcasecmp( buffer, "F10" ) == 0 )
         return JK_F10;
+    if( strcasecmp( buffer, "F11" ) == 0 )
+        return JK_F11;
+    if( strcasecmp( buffer, "F12" ) == 0 )
+        return JK_F12;
     if( strcasecmp( buffer, "Insert" ) == 0 )
         return JK_INSERT;
     if( strcasecmp( buffer, "PageUp" ) == 0 )

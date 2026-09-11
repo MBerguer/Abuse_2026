@@ -73,6 +73,10 @@ add_executable(abuse
     id.h isllist.h sbar.h
     nfserver.h
     ui/volumewindow.cpp ui/volumewindow.h
+    remaster/remaster_config.cpp remaster/remaster_config.h
+    remaster/remaster_gl.cpp remaster/remaster_gl.h
+    remaster/remaster_lighting.cpp remaster/remaster_lighting.h
+    remaster/remaster_shaders.h
     ${abuse_RESOURCE_FILES}
 )
 
@@ -140,6 +144,6 @@ else()
     if(APPLE)
         # macOS should probably include SDL rather than dynamically link them like Linux does
         # Add icon
-        install(FILES "../macOS/abuse.icns" DESTINATION "${CMAKE_INSTALL_PREFIX}/abuse.app/Contents/Resources")
+        install(FILES "../macos/abuse.icns" DESTINATION "${CMAKE_INSTALL_PREFIX}/abuse.app/Contents/Resources")
     endif()
 endif()
