@@ -19,7 +19,7 @@ struct RemasterConfig
 
     int shadow_quality = 2;          // 0: Off, 1: Fast (16 steps), 2: High (32 steps)
     float light_intensity = 1.2f;    // Dynamic light multiplier
-    float ambient_intensity = 0.75f;  // Ambient light level
+    float ambient_intensity = 0.42f;  // Ambient light level (calibrated high-contrast sci-fi base)
     float bloom_intensity = 0.55f;   // Bloom strength
     float normal_strength = 1.0f;    // Normal map depth strength
 

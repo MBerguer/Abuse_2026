@@ -364,7 +364,8 @@ void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, in
 
 void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h,
                               bool in_gameplay,
-                              float ui_u1, float ui_v1, float ui_u2, float ui_v2)
+                              float ui_u1, float ui_v1, float ui_u2, float ui_v2,
+                              int level_ambient)
 {
     s_time += 0.01667f;
     auto &cfg = RemasterConfig::get();
@@ -446,8 +447,9 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
 
     if (in_gameplay)
     {
-        // Ambient illumination matches non-raytracing 100% baseline: full visibility and authentic artwork
-        float amb = 1.0f * cfg.ambient_intensity;
+        // High-contrast atmospheric sci-fi ambient, modulated by level's authentic darkness (0..63)
+        float level_factor = std::clamp((float)level_ambient / 32.0f, 0.40f, 1.25f);
+        float amb = 0.42f * cfg.ambient_intensity * level_factor;
         glUniform3f(glGetUniformLocation(s_raytracing_prog, "u_ambient_color"), amb, amb, amb);
         glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_raytracing_enabled"), cfg.raytracing ? 1 : 0);
         glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_soft_shadows"), cfg.soft_shadows ? 1 : 0);

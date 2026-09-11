@@ -42,6 +42,7 @@
 #include "remaster/remaster_lighting.h"
 #include "game.h"
 #include "level.h"
+#include "cop.h"
 #include "sbar.h"
 
 extern view *player_list;
@@ -494,8 +495,13 @@ void update_window_done()
 
         if (RemasterConfig::get().enabled && in_gameplay && player_list)
         {
-            int p_world_x = player_list->x_center();
-            int p_world_y = player_list->y_center() - 16; // Player chest / weapon muzzle height
+            int p_world_x = 0, p_world_y = 0;
+            if (!get_player_muzzle_pos(player_list, p_world_x, p_world_y))
+            {
+                p_world_x = player_list->x_center();
+                p_world_y = player_list->y_center() - 16;
+            }
+
             int aim_world_x = player_list->pointer_x;
             int aim_world_y = player_list->pointer_y;
 
@@ -532,8 +538,9 @@ void update_window_done()
             ui_v2 = 1.0f;
         }
 
+        int level_amb = (in_gameplay && player_list) ? player_list->ambient : 32;
         RemasterGL::render_frame(screen->pixels, xres, yres, win_w, win_h, in_gameplay,
-                                 ui_u1, ui_v1, ui_u2, ui_v2);
+                                 ui_u1, ui_v1, ui_u2, ui_v2, level_amb);
         SDL_GL_SwapWindow(window);
     }
     else if (renderer && texture)

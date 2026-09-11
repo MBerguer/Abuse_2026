@@ -22,6 +22,7 @@
 #include "game.h"
 #include "jrand.h"
 #include "clisp.h"
+#include "view.h"
 #include "ant.h"
 #include "dev.h"
 
@@ -1100,6 +1101,34 @@ void *show_kills()
   Timer now; now.WaitMs(4000);   // wait 4 seconds
 
   return NULL;
+}
+
+bool get_player_muzzle_pos(view *v, int &muzzle_x, int &muzzle_y)
+{
+  if (!v || !v->m_focus)
+    return false;
+
+  game_object *bot = v->m_focus;
+  game_object *top = (bot->total_objects() > 0) ? bot->get_object(0) : nullptr;
+
+  if (!top || top->current_frame < 0 || top->current_frame >= 24)
+  {
+    muzzle_x = v->x_center();
+    muzzle_y = v->y_center() - 16;
+    return true;
+  }
+
+  signed char *fire_off = (top->otype == S_DFRIS_TOP || top->otype == S_ROCKET_TOP || top->otype == S_BFG_TOP)
+                              ? large_fire_off
+                              : small_fire_off;
+
+  int bx = bot->x;
+  if (bot->direction < 0)
+    bx += 4;
+
+  muzzle_x = bx + fire_off[top->current_frame * 2];
+  muzzle_y = bot->y - fire_off[top->current_frame * 2 + 1];
+  return true;
 }
 
 

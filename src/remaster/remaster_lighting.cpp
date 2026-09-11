@@ -110,13 +110,13 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
         }
 
         // 2a. Player subtle body presence (dim ambient glow around character)
-        add_point_light(px, py, 0.08f, 1.0f, 0.98f, 0.95f, 0.10f, 0.35f);
+        add_point_light(px, py, 0.06f, 1.0f, 0.98f, 0.95f, 0.08f, 0.30f);
 
-        // 2b. Tactical Weapon-Mounted Directional Flashlight (follows aim cone)
-        float spot_intensity = player_firing ? 2.6f : 1.75f;
-        float spot_radius = player_firing ? 0.60f : 0.52f;
-        float spot_cutoff = 0.68f; // ~48 degree realistic tactical cone
-        add_spot_light(px + dx * 0.025f, py + dy * 0.025f, 0.05f,
+        // 2b. Tactical Weapon-Mounted Directional Flashlight (starts directly at muzzle, pointing outward)
+        float spot_intensity = player_firing ? 2.8f : 2.2f;
+        float spot_radius = player_firing ? 0.65f : 0.58f;
+        float spot_cutoff = 0.70f; // ~45 degree tactical beam cone
+        add_spot_light(px + dx * 0.015f, py + dy * 0.015f, 0.05f,
                        1.0f, 0.97f, 0.92f,
                        spot_radius, spot_intensity,
                        dx, dy, spot_cutoff);
@@ -124,17 +124,19 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
         // 2c. Dynamic muzzle flash burst when firing
         if (player_firing)
         {
-            add_point_light(px + dx * 0.045f, py + dy * 0.045f, 0.04f, 1.0f, 0.90f, 0.45f, 0.28f, 3.2f);
+            add_point_light(px + dx * 0.035f, py + dy * 0.035f, 0.04f, 1.0f, 0.90f, 0.45f, 0.28f, 3.2f);
         }
     }
 
-    // 3. Dynamic colored lights from active weapon projectiles, rockets, lasers, and explosions
+    // 3. Dynamic colored lights from active weapon projectiles, interactive doors, switches, and consoles
     extern level *current_level;
     extern char **object_names;
     extern int total_objects;
 
     if (current_level && view_w > 0 && view_h > 0)
     {
+        float pulse = 0.85f + 0.15f * std::sin((float)current_level->tick_counter() * 0.18f);
+
         for (game_object *o = current_level->first_active_object(); o; o = o->next_active)
         {
             if (m_lights.size() >= MAX_LIGHTS)
@@ -143,7 +145,7 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
             float ox = (float)(o->x - camera_x) / (float)view_w;
             float oy = (float)(o->y - camera_y) / (float)view_h;
 
-            if (ox < -0.1f || ox > 1.1f || oy < -0.1f || oy > 1.1f)
+            if (ox < -0.15f || ox > 1.15f || oy < -0.15f || oy > 1.15f)
                 continue;
 
             if (o->otype >= 0 && o->otype < total_objects && object_names && object_names[o->otype])
@@ -184,6 +186,77 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
                 else if (strcasestr(name, "explo") || strcasestr(name, "exp_"))
                 {
                     add_point_light(ox, oy, 0.06f, 1.0f, 0.85f, 0.40f, 0.45f, 4.2f);
+                }
+                // Switches / Buttons (SWITCH, SWITCH_ONCE, SWITCH_DELAY, SWITCH_BALL, SWITCH_MOVER)
+                else if (strcasestr(name, "switch"))
+                {
+                    bool is_on = (o->state == running || o->Aistate != 0);
+                    if (is_on)
+                    {
+                        // Activated: vibrant glowing green indicator light
+                        add_point_light(ox, oy - 0.02f, 0.05f, 0.12f, 0.98f, 0.25f, 0.14f, 2.2f);
+                    }
+                    else
+                    {
+                        // Standby / Off: subtle amber-red standby LED
+                        add_point_light(ox, oy - 0.02f, 0.04f, 0.85f, 0.15f, 0.05f, 0.08f, 1.0f);
+                    }
+                }
+                // Doors / Gates (SWITCH_DOOR, TRAP_DOOR, TP_DOOR)
+                else if (strcasestr(name, "door"))
+                {
+                    if (strcasestr(name, "tp_door"))
+                    {
+                        // Swirling cyan/blue portal light
+                        add_point_light(ox, oy - 0.08f, 0.06f, 0.20f, 0.70f, 1.0f, 0.22f * pulse, 2.0f);
+                    }
+                    else
+                    {
+                        // Standard sliding/trap doors:
+                        // State 0: closed, State 1: opening, State 2: open, State 3: closing
+                        bool is_open_or_moving = (o->state != stopped || o->Aistate != 0);
+                        if (is_open_or_moving)
+                        {
+                            // Open threshold: warm passageway light spilling across floor and frame
+                            add_point_light(ox, oy - 0.10f, 0.06f, 0.95f, 0.90f, 0.70f, 0.24f, 1.8f);
+                        }
+                        else
+                        {
+                            // Closed: small red/amber safety sensor light on frame
+                            add_point_light(ox, oy - 0.20f, 0.04f, 0.75f, 0.15f, 0.05f, 0.07f, 0.9f);
+                        }
+                    }
+                }
+                // Computer Save Terminals (RESTART_POSITION)
+                else if (strcasestr(name, "restart") || strcasestr(name, "console"))
+                {
+                    bool is_saving = (o->state == running || o->Aistate >= 2);
+                    if (is_saving)
+                    {
+                        // Active save flash: bright digital cyan-white burst
+                        add_point_light(ox, oy - 0.06f, 0.06f, 0.40f, 0.90f, 1.0f, 0.28f, 3.2f);
+                    }
+                    else
+                    {
+                        // CRT terminal display: cool blue phosphor glow onto floor and nearby wall
+                        add_point_light(ox, oy - 0.06f, 0.05f, 0.18f, 0.65f, 1.0f, 0.16f, 1.6f);
+                    }
+                }
+                // Level Exit Teleportation Pad (NEXT_LEVEL)
+                else if (strcasestr(name, "next_level") || strcasestr(name, "end_port"))
+                {
+                    // Dimensional energy glow: pulsing magenta/violet light
+                    add_point_light(ox, oy - 0.05f, 0.06f, 0.75f, 0.25f, 1.0f, 0.22f * pulse, 2.2f);
+                }
+                // Health Powerup (heart)
+                else if (strcasestr(name, "health"))
+                {
+                    add_point_light(ox, oy, 0.04f, 0.95f, 0.20f, 0.35f, 0.10f * pulse, 1.3f);
+                }
+                // Ammo and Powerup pickups
+                else if (strcasestr(name, "_icon") || strcasestr(name, "power_"))
+                {
+                    add_point_light(ox, oy, 0.04f, 0.30f, 0.85f, 0.95f, 0.09f, 1.1f);
                 }
             }
         }

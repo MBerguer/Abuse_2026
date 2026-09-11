@@ -119,15 +119,17 @@ void main()
 
     gNormal = vec4(n * 0.5 + 0.5, roughness);
 
-    // Emission detection: Lasers, plasma, computer screens, sparks, fire
-    bool isLaser = (col.r > 0.65 && col.g < 0.35 && col.b < 0.35);
-    bool isPlasma = (col.g > 0.65 && col.r < 0.4);
-    bool isElectric = (col.b > 0.65 && col.g > 0.5);
-    bool isHot = (col.r > 0.8 && col.g > 0.6 && col.b < 0.4);
+    // Emission detection: Lasers, plasma, computer screens, door sensors, switches, sparks, fire
+    bool isLaser = (col.r > 0.65 && col.g < 0.28 && col.b < 0.28);
+    bool isPlasma = (col.g > 0.65 && col.r < 0.40);
+    bool isElectric = (col.b > 0.65 && col.g > 0.45);
+    bool isHot = (col.r > 0.80 && col.g > 0.55 && col.b < 0.35);
+    bool isConsoleScreen = (col.g > 0.50 && col.b > 0.50 && col.r < 0.45);
+    bool isSensorLED = (col.r > 0.70 && col.g < 0.25 && col.b < 0.25) || (col.g > 0.70 && col.r < 0.30 && col.b < 0.30);
 
-    if (lum > 0.85 || isLaser || isPlasma || isElectric || isHot)
+    if (lum > 0.85 || isLaser || isPlasma || isElectric || isHot || isConsoleScreen || isSensorLED)
     {
-        gEmission = vec4(col.rgb * 1.8, 1.0);
+        gEmission = vec4(col.rgb * 2.0, 1.0);
     }
     else
     {

@@ -42,6 +42,7 @@ void RemasterConfig::load()
                     else if (key == "crt_filter") crt_filter = (val == "1" || val == "true");
                     else if (key == "shadow_quality") shadow_quality = std::stoi(val);
                     else if (key == "light_intensity") light_intensity = std::stof(val);
+                    else if (key == "ambient_intensity") ambient_intensity = std::stof(val);
                     else if (key == "bloom_intensity") bloom_intensity = std::stof(val);
                     else if (key == "normal_strength") normal_strength = std::stof(val);
                 }
@@ -76,6 +77,7 @@ void RemasterConfig::save()
     file << "crt_filter = " << (crt_filter ? 1 : 0) << "\n";
     file << "shadow_quality = " << shadow_quality << "\n";
     file << "light_intensity = " << light_intensity << "\n";
+    file << "ambient_intensity = " << ambient_intensity << "\n";
     file << "bloom_intensity = " << bloom_intensity << "\n";
     file << "normal_strength = " << normal_strength << "\n";
 }
