@@ -341,6 +341,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_soft_shadows"), cfg.soft_shadows ? 1 : 0);
     glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_shadow_quality"), cfg.shadow_quality);
     glUniform1f(glGetUniformLocation(s_raytracing_prog, "u_light_intensity"), cfg.light_intensity);
+    glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_volumetric_enabled"), cfg.volumetric_fog ? 1 : 0);
 
     render_quad();
 

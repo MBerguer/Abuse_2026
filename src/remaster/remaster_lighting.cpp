@@ -1,8 +1,11 @@
 #include "remaster_lighting.h"
 #include "common.h"
 #include "light.h"
+#include "objects.h"
+#include "level.h"
 #include <cmath>
 #include <algorithm>
+#include <cstring>
 
 void RemasterLighting::clear()
 {
@@ -114,6 +117,43 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
             if (player_firing)
             {
                 add_point_light(px + dx * 0.05f, py + dy * 0.05f, 0.04f, 1.0f, 0.85f, 0.3f, 0.35f, 3.5f);
+            }
+        }
+    }
+
+    // 3. Dynamic lights from active weapon projectiles, rockets, lasers, and explosions
+    extern level *current_level;
+    extern char **object_names;
+    extern int total_objects;
+
+    if (current_level && view_w > 0 && view_h > 0)
+    {
+        for (game_object *o = current_level->first_active_object(); o; o = o->next_active)
+        {
+            if (m_lights.size() >= MAX_LIGHTS)
+                break;
+
+            float ox = (float)(o->x - camera_x) / (float)view_w;
+            float oy = (float)(o->y - camera_y) / (float)view_h;
+
+            if (ox < -0.1f || ox > 1.1f || oy < -0.1f || oy > 1.1f)
+                continue;
+
+            if (o->otype >= 0 && o->otype < total_objects && object_names && object_names[o->otype])
+            {
+                const char *name = object_names[o->otype];
+                if (strstr(name, "rocket") || strstr(name, "fire") || strstr(name, "gren"))
+                {
+                    add_point_light(ox, oy, 0.05f, 1.0f, 0.6f, 0.15f, 0.22f, 2.2f);
+                }
+                else if (strstr(name, "laser") || strstr(name, "plasma") || strstr(name, "nova"))
+                {
+                    add_point_light(ox, oy, 0.04f, 0.2f, 0.8f, 1.0f, 0.25f, 2.5f);
+                }
+                else if (strstr(name, "explo"))
+                {
+                    add_point_light(ox, oy, 0.06f, 1.0f, 0.85f, 0.4f, 0.45f, 3.5f);
+                }
             }
         }
     }

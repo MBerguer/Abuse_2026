@@ -173,6 +173,8 @@ float trace_shadow(vec2 frag_pos, vec2 light_pos, float light_radius)
     return clamp(shadow, 0.0, 1.0);
 }
 
+uniform int u_volumetric_enabled;
+
 void main()
 {
     vec4 albedo = texture(u_albedo, TexCoords);
@@ -182,6 +184,7 @@ void main()
 
     vec3 total_diffuse = u_ambient_color;
     vec3 total_specular = vec3(0.0);
+    vec3 total_volumetric = vec3(0.0);
 
     for (int i = 0; i < u_num_lights; i++)
     {
@@ -210,6 +213,13 @@ void main()
 
         // Raymarched soft shadow
         float shadow = trace_shadow(TexCoords, light_screen, light.radius);
+
+        // Volumetric in-scattering through atmosphere
+        if (u_volumetric_enabled == 1 && shadow > 0.01)
+        {
+            total_volumetric += light.color * light.intensity * atten * spot_factor * shadow * 0.18;
+        }
+
         if (shadow <= 0.001) continue;
 
         // 3D Direction to light
@@ -226,7 +236,7 @@ void main()
         total_specular += light_contrib * spec * 0.4;
     }
 
-    vec3 final_color = albedo.rgb * total_diffuse + total_specular + emission;
+    vec3 final_color = albedo.rgb * total_diffuse + total_specular + emission + total_volumetric;
     FragColor = vec4(final_color, albedo.a);
 }
 )";
