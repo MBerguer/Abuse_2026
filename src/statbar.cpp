@@ -194,6 +194,14 @@ void status_bar::area(int &x1, int &y1, int &x2, int &y2)
   y2=yres;
 }
 
+bool status_bar::get_area(int &x1, int &y1, int &x2, int &y2)
+{
+  if (sbar <= 0 || !total_weapons || !v)
+    return false;
+  area(x1, y1, x2, y2);
+  return (x2 > x1 && y2 > y1);
+}
+
 
 void status_bar::draw_health(image *screen,int amount)
 {

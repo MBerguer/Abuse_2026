@@ -338,7 +338,9 @@ void RemasterGL::capture_screenshot(const char *filepath, int window_w, int wind
     fclose(f);
 }
 
-void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h, bool in_gameplay)
+void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h,
+                              bool in_gameplay,
+                              float ui_u1, float ui_v1, float ui_u2, float ui_v2)
 {
     s_time += 0.01667f;
     auto &cfg = RemasterConfig::get();
@@ -365,6 +367,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
 
     glUseProgram(s_gbuffer_prog);
     glUniform1f(glGetUniformLocation(s_gbuffer_prog, "u_flip_y"), 1.0f);
+    glUniform4f(glGetUniformLocation(s_gbuffer_prog, "u_ui_rect"), ui_u1, ui_v1, ui_u2, ui_v2);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_source_texture);
     glUniform1i(glGetUniformLocation(s_gbuffer_prog, "u_scene"), 0);
@@ -380,6 +383,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
 
     glUseProgram(s_raytracing_prog);
     glUniform1f(glGetUniformLocation(s_raytracing_prog, "u_flip_y"), 1.0f);
+    glUniform4f(glGetUniformLocation(s_raytracing_prog, "u_ui_rect"), ui_u1, ui_v1, ui_u2, ui_v2);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_g_albedo);
@@ -493,6 +497,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
 
     glUseProgram(s_composite_prog);
     glUniform1f(glGetUniformLocation(s_composite_prog, "u_flip_y"), 0.0f);
+    glUniform4f(glGetUniformLocation(s_composite_prog, "u_ui_rect"), ui_u1, ui_v1, ui_u2, ui_v2);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_lit_texture);

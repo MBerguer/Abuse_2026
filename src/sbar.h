@@ -44,6 +44,7 @@ class status_bar
   void draw_ammo(image *screen, int weapon_num, int amount, int light);
   void need_refresh() { need_rf=1; }
   void draw_update();
+  bool get_area(int &x1, int &y1, int &x2, int &y2);
 };
 
 extern status_bar sbar;

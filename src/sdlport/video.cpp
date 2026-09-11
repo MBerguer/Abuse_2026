@@ -42,6 +42,7 @@
 #include "remaster/remaster_lighting.h"
 #include "game.h"
 #include "level.h"
+#include "sbar.h"
 
 extern view *player_list;
 
@@ -520,7 +521,19 @@ void update_window_done()
             RemasterLighting::get().clear();
         }
 
-        RemasterGL::render_frame(screen->pixels, xres, yres, win_w, win_h, in_gameplay);
+        float ui_u1 = 0.0f, ui_v1 = 1.0f, ui_u2 = 0.0f, ui_v2 = 1.0f;
+        int sx1, sy1, sx2, sy2;
+        if (in_gameplay && sbar.get_area(sx1, sy1, sx2, sy2))
+        {
+            // UI Layer (Status Bar): sits on top of game world, unshaded by ambient darkness or raytracing
+            ui_u1 = 0.0f;
+            ui_v1 = (float)sy1 / (float)yres;
+            ui_u2 = 1.0f;
+            ui_v2 = 1.0f;
+        }
+
+        RemasterGL::render_frame(screen->pixels, xres, yres, win_w, win_h, in_gameplay,
+                                 ui_u1, ui_v1, ui_u2, ui_v2);
         SDL_GL_SwapWindow(window);
     }
     else if (renderer && texture)

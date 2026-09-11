@@ -69,11 +69,33 @@ layout (location = 3) out vec4 gOcclusion;
 uniform sampler2D u_scene;
 uniform vec2 u_texel_size;
 uniform float u_normal_strength;
+uniform vec4 u_ui_rect;
 
 void main()
 {
     vec4 col = texture(u_scene, TexCoords);
     gAlbedo = col;
+
+    bool is_ui = (TexCoords.x >= u_ui_rect.x && TexCoords.x <= u_ui_rect.z &&
+                  TexCoords.y >= u_ui_rect.y && TexCoords.y <= u_ui_rect.w);
+
+    if (is_ui)
+    {
+        // UI Layer (Higher Z-Index): flat surface normal, never occludes or casts shadows into world
+        gNormal = vec4(0.5, 0.5, 1.0, 1.0);
+        gOcclusion = vec4(0.0, 0.0, 0.0, 1.0);
+
+        // Subtle digital LED emission for green HUD readouts (health & ammo)
+        if (col.g > 0.35 && col.r < 0.25 && col.b < 0.25)
+        {
+            gEmission = vec4(col.rgb * 1.5, 1.0);
+        }
+        else
+        {
+            gEmission = vec4(0.0, 0.0, 0.0, 1.0);
+        }
+        return;
+    }
 
     // Normal generation via Sobel operator on luminance
     float l = dot(texture(u_scene, TexCoords - vec2(u_texel_size.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
@@ -136,6 +158,7 @@ uniform int u_raytracing_enabled;
 uniform int u_soft_shadows;
 uniform int u_shadow_quality;
 uniform float u_light_intensity;
+uniform vec4 u_ui_rect;
 
 float trace_shadow(vec2 frag_pos, vec2 light_pos, float light_radius)
 {
@@ -179,6 +202,23 @@ uniform int u_volumetric_enabled;
 void main()
 {
     vec4 albedo = texture(u_albedo, TexCoords);
+
+    bool is_ui = (TexCoords.x >= u_ui_rect.x && TexCoords.x <= u_ui_rect.z &&
+                  TexCoords.y >= u_ui_rect.y && TexCoords.y <= u_ui_rect.w);
+
+    if (is_ui)
+    {
+        // UI layer has a higher Z-Index: drawn on top of the 2D world.
+        // It is unaffected by ambient darkness, shadow casting, or world lights.
+        vec3 col = albedo.rgb;
+        if (col.g > 0.35 && col.r < 0.25 && col.b < 0.25)
+        {
+            col = min(col * 1.3, vec3(1.0)); // Crisp glowing digital LED readout
+        }
+        FragColor = vec4(col, 1.0);
+        return;
+    }
+
     vec3 normal_raw = texture(u_normal, TexCoords).rgb * 2.0 - 1.0;
     vec3 normal = normalize(normal_raw);
     vec3 emission = texture(u_emission, TexCoords).rgb;
@@ -274,6 +314,7 @@ uniform float u_bloom_intensity;
 uniform int u_bloom_enabled;
 uniform int u_reflections_enabled;
 uniform float u_time;
+uniform vec4 u_ui_rect;
 
 // ACES Filmic Tonemapping
 vec3 aces_tonemap(vec3 x)
@@ -291,8 +332,11 @@ void main()
     vec4 base = texture(u_lit_scene, TexCoords);
     vec3 color = base.rgb;
 
-    // Floor / Puddle reflections (screen-space reflection)
-    if (u_reflections_enabled == 1)
+    bool is_ui = (TexCoords.x >= u_ui_rect.x && TexCoords.x <= u_ui_rect.z &&
+                  TexCoords.y >= u_ui_rect.y && TexCoords.y <= u_ui_rect.w);
+
+    // Floor / Puddle reflections (screen-space reflection) - game world only
+    if (u_reflections_enabled == 1 && !is_ui)
     {
         // Detect wet metal / water surfaces (bottom half, reflective color)
         if (TexCoords.y > 0.6)
@@ -314,9 +358,12 @@ void main()
     // Tonemapping & color grading
     color = aces_tonemap(color);
 
-    // Subtle atmospheric vignette
-    float vig = 16.0 * TexCoords.x * TexCoords.y * (1.0 - TexCoords.x) * (1.0 - TexCoords.y);
-    color *= clamp(pow(vig, 0.08), 0.0, 1.0);
+    // Subtle atmospheric vignette (applied to the game world, leaving the UI layer crisp and bright)
+    if (!is_ui)
+    {
+        float vig = 16.0 * TexCoords.x * TexCoords.y * (1.0 - TexCoords.x) * (1.0 - TexCoords.y);
+        color *= clamp(pow(vig, 0.08), 0.0, 1.0);
+    }
 
     FragColor = vec4(color, base.a);
 }
