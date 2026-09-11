@@ -48,6 +48,11 @@ void RemasterConfig::load()
             }
         }
     }
+
+    if (getenv("ABUSE_NO_REMASTER"))
+        enabled = false;
+    if (getenv("ABUSE_NO_RT"))
+        raytracing = false;
 }
 
 void RemasterConfig::save()

@@ -81,16 +81,12 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
             ly + radius < 0.0f || ly - radius > 1.0f)
             continue;
 
-        // Color based on light type in Abuse
-        float cr = 1.0f, cg = 0.95f, cb = 0.85f;
-        if (s->type == 1) { cr = 0.3f; cg = 1.0f; cb = 0.4f; } // Alien toxic green
-        else if (s->type == 2) { cr = 1.0f; cg = 0.3f; cb = 0.2f; } // Alarm red
-        else if (s->type == 3) { cr = 0.4f; cg = 0.6f; cb = 1.0f; } // Cyber blue
-
-        add_point_light(lx, ly, 0.06f, cr, cg, cb, std::max(0.15f, radius * 1.5f), 1.3f);
+        // Natural warm industrial light (no artificial green/red tints)
+        float cr = 1.0f, cg = 0.98f, cb = 0.94f;
+        add_point_light(lx, ly, 0.06f, cr, cg, cb, std::max(0.12f, radius * 1.2f), 0.65f);
     }
 
-    // 2. Player Tactical Flashlight / Aim Cone
+    // 2. Player Subtle Local Aura & Muzzle Flash (no blinding searchlight cone)
     if (view_w > 0 && view_h > 0)
     {
         float px = (float)player_screen_x / (float)view_w;
@@ -106,18 +102,20 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
         {
             dx /= len;
             dy /= len;
+        }
+        else
+        {
+            dx = 1.0f;
+            dy = 0.0f;
+        }
 
-            // Player body ambient aura
-            add_point_light(px, py, 0.08f, 0.8f, 0.85f, 1.0f, 0.22f, 0.9f);
+        // Player subtle ambient presence
+        add_point_light(px, py, 0.08f, 1.0f, 0.98f, 0.95f, 0.18f, 0.45f);
 
-            // Directional weapon flashlight cone towards crosshair
-            add_spot_light(px, py, 0.05f, 1.0f, 0.98f, 0.92f, 0.75f, 1.8f, dx, dy, 0.72f);
-
-            // Muzzle flash when firing
-            if (player_firing)
-            {
-                add_point_light(px + dx * 0.05f, py + dy * 0.05f, 0.04f, 1.0f, 0.85f, 0.3f, 0.35f, 3.5f);
-            }
+        // Dynamic muzzle flash when firing
+        if (player_firing)
+        {
+            add_point_light(px + dx * 0.05f, py + dy * 0.05f, 0.04f, 1.0f, 0.92f, 0.6f, 0.35f, 2.5f);
         }
     }
 

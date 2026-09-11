@@ -255,10 +255,10 @@ void main()
         // Raymarched soft shadow
         float shadow = trace_shadow(TexCoords, light_screen, light.radius);
 
-        // Volumetric in-scattering through atmosphere
+        // Subtle atmospheric in-scattering
         if (u_volumetric_enabled == 1 && shadow > 0.01)
         {
-            total_volumetric += light.color * light.intensity * atten * spot_factor * shadow * 0.18;
+            total_volumetric += light.color * light.intensity * atten * shadow * 0.03;
         }
 
         if (shadow <= 0.001) continue;
