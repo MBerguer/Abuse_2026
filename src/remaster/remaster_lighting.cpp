@@ -207,29 +207,21 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
                         add_point_light(ox, oy - 0.02f, 0.04f, 0.85f, 0.15f, 0.05f, 0.08f, 1.0f);
                     }
                 }
-                // Doors / Gates (SWITCH_DOOR, TRAP_DOOR, TP_DOOR)
-                else if (strcasestr(name, "door"))
+                // Doors / Gates (SWITCH_DOOR, TRAP_DOOR, DOOR)
+                else if (strcasestr(name, "door") && !strcasestr(name, "tp_door"))
                 {
-                    if (strcasestr(name, "tp_door"))
+                    // Standard sliding/trap doors linked to switches:
+                    // State 0: closed, State 1: opening, State 2: open, State 3: closing
+                    bool is_open_or_moving = (o->state != stopped || o->Aistate != 0);
+                    if (is_open_or_moving)
                     {
-                        // Swirling cyan/blue portal light
-                        add_point_light(ox, oy - 0.08f, 0.06f, 0.20f, 0.70f, 1.0f, 0.22f * pulse, 2.0f);
+                        // Open threshold: warm yellowish / golden amber passageway light (amarillita)
+                        add_point_light(ox, oy - 0.10f, 0.06f, 1.0f, 0.88f, 0.40f, 0.28f, 2.2f);
                     }
                     else
                     {
-                        // Standard sliding/trap doors:
-                        // State 0: closed, State 1: opening, State 2: open, State 3: closing
-                        bool is_open_or_moving = (o->state != stopped || o->Aistate != 0);
-                        if (is_open_or_moving)
-                        {
-                            // Open threshold: warm passageway light spilling across floor and frame
-                            add_point_light(ox, oy - 0.10f, 0.06f, 0.95f, 0.90f, 0.70f, 0.24f, 1.8f);
-                        }
-                        else
-                        {
-                            // Closed: small red/amber safety sensor light on frame
-                            add_point_light(ox, oy - 0.20f, 0.04f, 0.75f, 0.15f, 0.05f, 0.07f, 0.9f);
-                        }
+                        // Closed: subtle warm amber safety sensor light on frame (no green)
+                        add_point_light(ox, oy - 0.20f, 0.04f, 0.90f, 0.55f, 0.10f, 0.08f, 1.0f);
                     }
                 }
                 // Computer Save Terminals (RESTART_POSITION)
@@ -247,11 +239,20 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
                         add_point_light(ox, oy - 0.06f, 0.05f, 0.18f, 0.65f, 1.0f, 0.16f, 1.6f);
                     }
                 }
-                // Level Exit Teleportation Pad (NEXT_LEVEL)
-                else if (strcasestr(name, "next_level") || strcasestr(name, "end_port"))
+                // Teleporters, Portals, and Exit Beams (TP_DOOR, TELE, TELE2, TELE_BEAM, NEXT_LEVEL, SENSOR_TELEPORT)
+                else if (strcasestr(name, "tele") || strcasestr(name, "tp_door") ||
+                         strcasestr(name, "next_level") || strcasestr(name, "end_port") ||
+                         strcasestr(name, "port"))
                 {
-                    // Dimensional energy glow: pulsing magenta/violet light
-                    add_point_light(ox, oy - 0.05f, 0.06f, 0.75f, 0.25f, 1.0f, 0.22f * pulse, 2.2f);
+                    bool is_active = (o->state == running || o->Aistate != 0);
+                    float tp_pulse = 0.85f + 0.15f * std::sin((float)current_level->tick_counter() * 0.40f);
+                    float rad = is_active ? 0.46f : 0.32f;
+                    float inten = is_active ? 4.2f : 2.6f;
+
+                    // Dazzling pure-white energetic raytracing portal light
+                    add_point_light(ox, oy - 0.08f, 0.06f, 0.96f, 0.98f, 1.0f, rad * tp_pulse, inten);
+                    // Core electric diamond beam highlight
+                    add_point_light(ox, oy - 0.08f, 0.04f, 1.0f, 1.0f, 1.0f, rad * 0.40f, inten * 1.35f);
                 }
                 // Health Powerup (heart)
                 else if (strcasestr(name, "health"))
@@ -262,6 +263,88 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
                 else if (strcasestr(name, "_icon") || strcasestr(name, "power_"))
                 {
                     add_point_light(ox, oy, 0.04f, 0.30f, 0.85f, 0.95f, 0.09f, 1.1f);
+                }
+            }
+        }
+    }
+
+    // 4. Atmospheric off-screen lights in wide open spaces (tenue / creepy ambiance)
+    if (current_level && view_w > 0 && view_h > 0 &&
+        current_level->foreground_width() > 0 && current_level->foreground_height() > 0)
+    {
+        int fg_w = current_level->foreground_width();
+        int fg_h = current_level->foreground_height();
+
+        // Sample 35 points across the viewport to measure openness of the room
+        int open_count = 0;
+        int total_samples = 0;
+        for (int sy = 1; sy <= 5; sy++)
+        {
+            int ty = (camera_y + (sy * view_h) / 6) / 16;
+            if (ty < 0 || ty >= fg_h) continue;
+            uint16_t *line = current_level->get_fgline(ty);
+            if (!line) continue;
+            for (int sx = 1; sx <= 7; sx++)
+            {
+                int tx = (camera_x + (sx * view_w) / 8) / 16;
+                if (tx >= 0 && tx < fg_w)
+                {
+                    total_samples++;
+                    if ((line[tx] & 0x7FFF) == 0) // Air / empty space
+                    {
+                        open_count++;
+                    }
+                }
+            }
+        }
+
+        // Only inject off-screen cavern lights in wide open spaces (> 50% open space)
+        if (total_samples > 0 && (open_count * 100 / total_samples) >= 50)
+        {
+            const int metraje = 300; // Place an atmospheric shaft every ~300 world pixels
+            int min_col = (camera_x - 150) / metraje;
+            int max_col = (camera_x + view_w + 150) / metraje;
+            uint32_t tick = current_level->tick_counter();
+
+            for (int col = min_col; col <= max_col; col++)
+            {
+                if (m_lights.size() >= MAX_LIGHTS) break;
+
+                int wx = col * metraje + 150;
+                float lx = (float)(wx - camera_x) / (float)view_w;
+
+                // Positioned OUTSIDE the screen above the ceiling:
+                // Screen Y is negative (-0.22f), never showing the light bulb directly
+                float ly = -0.22f;
+
+                // Subtle organic electrical pulse and occasional spooky flicker
+                float flicker_phase = (float)tick * 0.08f + (float)col * 2.39f;
+                float flicker = 0.85f + 0.15f * std::sin(flicker_phase);
+                if (((tick + col * 31) % 89) < 6)
+                {
+                    flicker *= 0.40f; // Eerie voltage drop / stutter
+                }
+
+                // Creepy/Tenue palette:
+                // Alternate between cold eerie mercury-vapor cyan/white and dim sodium amber
+                float cr, cg, cb;
+                if (col % 2 == 0)
+                {
+                    cr = 0.65f; cg = 0.80f; cb = 0.95f; // Cold industrial vent shaft light
+                }
+                else
+                {
+                    cr = 0.85f; cg = 0.60f; cb = 0.28f; // Dim eerie emergency beacon
+                }
+
+                // Wide radius projects soft volumetric light down into the dark chamber
+                add_point_light(lx, ly, 0.08f, cr, cg, cb, 0.72f, 1.15f * flicker);
+
+                // For deep chasms / pits, add an ominous bottom glow
+                if (col % 3 == 1 && m_lights.size() < MAX_LIGHTS)
+                {
+                    float ly_pit = 1.25f; // Deep below the floor
+                    add_point_light(lx, ly_pit, 0.08f, 0.90f, 0.35f, 0.10f, 0.65f, 0.85f * flicker);
                 }
             }
         }
