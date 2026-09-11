@@ -294,6 +294,7 @@ static void check_dump_screenshot(int window_w, int window_h)
 {
     static int s_frame_counter = 0;
     s_frame_counter++;
+
     const char *dump_env = getenv("ABUSE_DUMP_FRAME");
     if (dump_env)
     {
@@ -364,7 +365,7 @@ void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, in
 
 void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h,
                               bool in_gameplay,
-                              float ui_u1, float ui_v1, float ui_u2, float ui_v2,
+                              const std::vector<RemasterUIRect> &ui_rects,
                               int level_ambient)
 {
     s_time += 0.01667f;
@@ -381,6 +382,17 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
         resize(src_w, src_h);
     }
 
+    // Flatten UI rects for GPU upload
+    int num_rects = std::min((int)ui_rects.size(), 16);
+    float rect_data[16 * 4] = {0};
+    for (int i = 0; i < num_rects; i++)
+    {
+        rect_data[i * 4 + 0] = ui_rects[i].u1;
+        rect_data[i * 4 + 1] = ui_rects[i].v1;
+        rect_data[i * 4 + 2] = ui_rects[i].u2;
+        rect_data[i * 4 + 3] = ui_rects[i].v2;
+    }
+
     // 1. Upload scene pixel data to GPU texture
     glBindTexture(GL_TEXTURE_2D, s_source_texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, src_w, src_h, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixel_data);
@@ -392,7 +404,11 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
 
     glUseProgram(s_gbuffer_prog);
     glUniform1f(glGetUniformLocation(s_gbuffer_prog, "u_flip_y"), 1.0f);
-    glUniform4f(glGetUniformLocation(s_gbuffer_prog, "u_ui_rect"), ui_u1, ui_v1, ui_u2, ui_v2);
+    glUniform1i(glGetUniformLocation(s_gbuffer_prog, "u_num_ui_rects"), num_rects);
+    if (num_rects > 0)
+    {
+        glUniform4fv(glGetUniformLocation(s_gbuffer_prog, "u_ui_rects"), num_rects, rect_data);
+    }
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_source_texture);
     glUniform1i(glGetUniformLocation(s_gbuffer_prog, "u_scene"), 0);
@@ -408,7 +424,11 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
 
     glUseProgram(s_raytracing_prog);
     glUniform1f(glGetUniformLocation(s_raytracing_prog, "u_flip_y"), 1.0f);
-    glUniform4f(glGetUniformLocation(s_raytracing_prog, "u_ui_rect"), ui_u1, ui_v1, ui_u2, ui_v2);
+    glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_num_ui_rects"), num_rects);
+    if (num_rects > 0)
+    {
+        glUniform4fv(glGetUniformLocation(s_raytracing_prog, "u_ui_rects"), num_rects, rect_data);
+    }
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_g_albedo);
@@ -524,7 +544,11 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
 
     glUseProgram(s_composite_prog);
     glUniform1f(glGetUniformLocation(s_composite_prog, "u_flip_y"), 0.0f);
-    glUniform4f(glGetUniformLocation(s_composite_prog, "u_ui_rect"), ui_u1, ui_v1, ui_u2, ui_v2);
+    glUniform1i(glGetUniformLocation(s_composite_prog, "u_num_ui_rects"), num_rects);
+    if (num_rects > 0)
+    {
+        glUniform4fv(glGetUniformLocation(s_composite_prog, "u_ui_rects"), num_rects, rect_data);
+    }
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_lit_texture);

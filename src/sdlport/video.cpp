@@ -529,20 +529,68 @@ void update_window_done()
             RemasterLighting::get().clear();
         }
 
-        float ui_u1 = 0.0f, ui_v1 = 1.0f, ui_u2 = 0.0f, ui_v2 = 1.0f;
+        std::vector<RemasterUIRect> ui_rects;
+
+        // 1. UI Layer (Status Bar): sits on top of game world, unshaded by ambient darkness or raytracing
         int sx1, sy1, sx2, sy2;
         if (in_gameplay && sbar.get_area(sx1, sy1, sx2, sy2))
         {
-            // UI Layer (Status Bar): sits on top of game world, unshaded by ambient darkness or raytracing
-            ui_u1 = (float)sx1 / (float)xres;
-            ui_v1 = (float)sy1 / (float)yres;
-            ui_u2 = (float)sx2 / (float)xres;
-            ui_v2 = 1.0f;
+            RemasterUIRect r;
+            r.u1 = (float)sx1 / (float)xres;
+            r.v1 = (float)sy1 / (float)yres;
+            r.u2 = (float)sx2 / (float)xres;
+            r.v2 = 1.0f;
+            ui_rects.push_back(r);
+        }
+
+        // 2. All active GUI Windows (Save Game dialogs, Load Game, preview thumbnails, Automap, Volume, Popups, etc.)
+        if (wm)
+        {
+            for (Jwindow *w = wm->m_first; w; w = w->next)
+            {
+                if (!w->is_hidden() && w->m_size.x > 0 && w->m_size.y > 0)
+                {
+                    int wx1 = std::max(0, w->m_pos.x - 1);
+                    int wy1 = std::max(0, w->m_pos.y - 1);
+                    int wx2 = std::min(xres, w->m_pos.x + w->m_size.x + 1);
+                    int wy2 = std::min(yres, w->m_pos.y + w->m_size.y + 1);
+
+                    RemasterUIRect r;
+                    r.u1 = (float)wx1 / (float)xres;
+                    r.v1 = (float)wy1 / (float)yres;
+                    r.u2 = (float)wx2 / (float)xres;
+                    r.v2 = (float)wy2 / (float)yres;
+                    ui_rects.push_back(r);
+                }
+            }
+        }
+
+        // 3. In-game guidance text & training instructions ("This console saves the state of the game", station alerts, hints)
+        if (the_game && the_game->is_showing_help())
+        {
+            int banner_h = (wm && wm->font()) ? (wm->font()->Size().y + 14) : 26;
+            RemasterUIRect r;
+            r.u1 = 0.0f;
+            r.v1 = 0.0f;
+            r.u2 = 1.0f;
+            r.v2 = std::min(1.0f, (float)banner_h / (float)yres);
+            ui_rects.push_back(r);
+        }
+
+        // 4. In-game Pause overlay
+        if (the_game && the_game->state == PAUSE_STATE)
+        {
+            RemasterUIRect r;
+            r.u1 = 0.35f;
+            r.v1 = 0.0f;
+            r.u2 = 0.65f;
+            r.v2 = 0.15f;
+            ui_rects.push_back(r);
         }
 
         int level_amb = (in_gameplay && player_list) ? player_list->ambient : 32;
         RemasterGL::render_frame(screen->pixels, xres, yres, win_w, win_h, in_gameplay,
-                                 ui_u1, ui_v1, ui_u2, ui_v2, level_amb);
+                                 ui_rects, level_amb);
         SDL_GL_SwapWindow(window);
     }
     else if (renderer && texture)

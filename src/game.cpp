@@ -556,9 +556,18 @@ void Game::menu_select(Event &ev)
 
 void Game::show_help(char const *st)
 {
-    strcpy(help_text, st);
-    help_text_frames = 0;
-    refresh = 1;
+    if (st && st[0])
+    {
+        strncpy(help_text, st, sizeof(help_text) - 1);
+        help_text[sizeof(help_text) - 1] = '\0';
+        help_text_frames = 0;
+        refresh = 1;
+    }
+    else
+    {
+        help_text[0] = '\0';
+        help_text_frames = -1;
+    }
 }
 
 void Game::draw_value(image *screen, int x, int y, int w, int h,
@@ -602,7 +611,8 @@ void Game::load_level(char const *name)
     base->current_tick=(current_level->tick_counter()&0xff);
 
     current_level->level_loaded_notify();
-    the_game->help_text_frames = 0;
+    the_game->help_text_frames = -1;
+    the_game->help_text[0] = '\0';
 }
 
 int Game::done()
@@ -1053,7 +1063,7 @@ void Game::draw_map(view *v, int interpolate)
 
     if(dev & DRAW_HELP_LAYER)
     {
-      if(help_text_frames >= 0)
+      if(help_text_frames >= 0 && help_text[0])
       {
     int color = 2 + Max(0, help_text_frames - 10);
 
@@ -1066,7 +1076,10 @@ void Game::draw_map(view *v, int interpolate)
 
     wm->font()->PutString(main_screen, aa + ivec2(5), help_text, color);
     if(color > 30)
+    {
         help_text_frames = -1;
+        help_text[0] = '\0';
+    }
     else help_text_frames++;
 
       }
@@ -1377,7 +1390,7 @@ Game::Game(int argc, char **argv)
   old_view = first_view = NULL;
   nplayers = 1;
 
-  help_text_frames = 0;
+  help_text_frames = -1;
   strcpy(help_text, "");
   no_delay = 0;
 

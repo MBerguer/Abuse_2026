@@ -69,24 +69,37 @@ layout (location = 3) out vec4 gOcclusion;
 uniform sampler2D u_scene;
 uniform vec2 u_texel_size;
 uniform float u_normal_strength;
-uniform vec4 u_ui_rect;
+
+const int MAX_UI_RECTS = 16;
+uniform int u_num_ui_rects;
+uniform vec4 u_ui_rects[MAX_UI_RECTS];
+
+bool is_in_ui(vec2 uv)
+{
+    for (int i = 0; i < u_num_ui_rects; i++)
+    {
+        if (uv.x >= u_ui_rects[i].x && uv.x <= u_ui_rects[i].z &&
+            uv.y >= u_ui_rects[i].y && uv.y <= u_ui_rects[i].w)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
 void main()
 {
     vec4 col = texture(u_scene, TexCoords);
     gAlbedo = col;
 
-    bool is_ui = (TexCoords.x >= u_ui_rect.x && TexCoords.x <= u_ui_rect.z &&
-                  TexCoords.y >= u_ui_rect.y && TexCoords.y <= u_ui_rect.w);
-
-    if (is_ui)
+    if (is_in_ui(TexCoords))
     {
         // UI Layer (Higher Z-Index): flat surface normal, never occludes or casts shadows into world
         gNormal = vec4(0.5, 0.5, 1.0, 1.0);
         gOcclusion = vec4(0.0, 0.0, 0.0, 1.0);
 
-        // Subtle digital LED emission for green HUD readouts (health & ammo)
-        if (col.g > 0.35 && col.r < 0.25 && col.b < 0.25)
+        // Subtle digital LED emission specifically for bottom HUD readouts (health & ammo)
+        if (TexCoords.y > 0.70 && col.g > 0.35 && col.r < 0.25 && col.b < 0.25)
         {
             gEmission = vec4(col.rgb * 1.5, 1.0);
         }
@@ -213,7 +226,23 @@ uniform int u_raytracing_enabled;
 uniform int u_soft_shadows;
 uniform int u_shadow_quality;
 uniform float u_light_intensity;
-uniform vec4 u_ui_rect;
+
+const int MAX_UI_RECTS = 16;
+uniform int u_num_ui_rects;
+uniform vec4 u_ui_rects[MAX_UI_RECTS];
+
+bool is_in_ui(vec2 uv)
+{
+    for (int i = 0; i < u_num_ui_rects; i++)
+    {
+        if (uv.x >= u_ui_rects[i].x && uv.x <= u_ui_rects[i].z &&
+            uv.y >= u_ui_rects[i].y && uv.y <= u_ui_rects[i].w)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
 float trace_shadow(vec2 frag_pos, vec2 light_pos, float light_radius)
 {
@@ -258,17 +287,14 @@ void main()
 {
     vec4 albedo = texture(u_albedo, TexCoords);
 
-    bool is_ui = (TexCoords.x >= u_ui_rect.x && TexCoords.x <= u_ui_rect.z &&
-                  TexCoords.y >= u_ui_rect.y && TexCoords.y <= u_ui_rect.w);
-
-    if (is_ui)
+    if (is_in_ui(TexCoords))
     {
         // UI layer has a higher Z-Index: drawn on top of the 2D world.
         // It is unaffected by ambient darkness, shadow casting, or world lights.
         vec3 col = albedo.rgb;
-        if (col.g > 0.35 && col.r < 0.25 && col.b < 0.25)
+        if (TexCoords.y > 0.70 && col.g > 0.35 && col.r < 0.25 && col.b < 0.25)
         {
-            col = min(col * 1.3, vec3(1.0)); // Crisp glowing digital LED readout
+            col = min(col * 1.3, vec3(1.0)); // Crisp glowing digital LED readout for status bar
         }
         FragColor = vec4(col, 1.0);
         return;
@@ -383,7 +409,23 @@ uniform float u_bloom_intensity;
 uniform int u_bloom_enabled;
 uniform int u_reflections_enabled;
 uniform float u_time;
-uniform vec4 u_ui_rect;
+
+const int MAX_UI_RECTS = 16;
+uniform int u_num_ui_rects;
+uniform vec4 u_ui_rects[MAX_UI_RECTS];
+
+bool is_in_ui(vec2 uv)
+{
+    for (int i = 0; i < u_num_ui_rects; i++)
+    {
+        if (uv.x >= u_ui_rects[i].x && uv.x <= u_ui_rects[i].z &&
+            uv.y >= u_ui_rects[i].y && uv.y <= u_ui_rects[i].w)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
 // ACES Filmic Tonemapping
 vec3 aces_tonemap(vec3 x)
@@ -401,11 +443,22 @@ void main()
     vec4 base = texture(u_lit_scene, TexCoords);
     vec3 color = base.rgb;
 
-    bool is_ui = (TexCoords.x >= u_ui_rect.x && TexCoords.x <= u_ui_rect.z &&
-                  TexCoords.y >= u_ui_rect.y && TexCoords.y <= u_ui_rect.w);
+    bool is_ui = is_in_ui(TexCoords);
+    if (is_ui)
+    {
+        // UI sits at top Z-index: crisp, unshaded, unaffected by world post-processing
+        vec3 ui_col = base.rgb;
+        if (u_bloom_enabled == 1 && TexCoords.y > 0.70)
+        {
+            vec3 bloom = texture(u_bloom, TexCoords).rgb;
+            ui_col += bloom * (u_bloom_intensity * 0.5);
+        }
+        FragColor = vec4(ui_col, base.a);
+        return;
+    }
 
     // Screen-Space Planar Floor & Water Reflections (Characters, Monsters, Lasers & Muzzle Flash)
-    if (u_reflections_enabled == 1 && !is_ui)
+    if (u_reflections_enabled == 1)
     {
         vec4 norm_data = texture(u_normal, TexCoords);
         vec3 norm = normalize(norm_data.rgb * 2.0 - 1.0);

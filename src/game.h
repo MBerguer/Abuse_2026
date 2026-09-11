@@ -111,6 +111,7 @@ public :
 
   void step();
   void show_help(char const *st);
+  bool is_showing_help() const { return help_text_frames >= 0 && help_text[0] != '\0'; }
   void draw_value(image *screen, int x, int y, int w, int h, int val, int max);
   unsigned char get_color(int x) { return x; }
   int done();
