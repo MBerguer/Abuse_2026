@@ -41,6 +41,7 @@
 #include "nfserver.h"
 #include "chat.h"
 #include "remaster/remaster_timing.h"
+#include "remaster/remaster_config.h"
 
 #define SHIFT_DOWN_DEFAULT 24
 #define SHIFT_RIGHT_DEFAULT 0
@@ -788,7 +789,10 @@ void recalc_local_view_space()   // calculates view areas for local players, sho
     if (f->suggest.cx2>Xres-2) f->suggest.cx2=Xres-2;
 
     f->suggest.cy1=y;
-    f->suggest.cy2=h-(total_weapons ? 33 : 0);
+    if (RemasterConfig::get().enabled)
+      f->suggest.cy2=Yres - 1;
+    else
+      f->suggest.cy2=h-(total_weapons ? 33 : 0);
 
     f->suggest.shift = f->m_shift;
     f->suggest.pan_x=f->pan_x;

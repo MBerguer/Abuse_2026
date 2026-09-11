@@ -36,6 +36,8 @@
 #include "sprite.h"
 #include "game.h"
 #include "setup.h"
+#include "gamma.h"
+#include "loader2.h"
 #include "remaster/remaster_config.h"
 
 extern SDL_Window *window;
@@ -336,8 +338,13 @@ void EventHandler::SysEvent(Event &ev)
 			ev.key = JK_F7;
 			break;
 
-		case SDLK_F8://AR toggle controller aim
-			if(ev.type==EV_KEYRELEASE) settings.ctr_aim = !settings.ctr_aim;
+		case SDLK_F8: // Open Gamma / Brightness Calibration Popup
+			if(ev.type == EV_KEYRELEASE)
+			{
+				gamma_correct(pal, 1);
+				if (the_game)
+					the_game->show_help("Gamma / Brightness Calibration Updated");
+			}
 			ev.key = JK_F8;
 			break;
 

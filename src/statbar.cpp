@@ -23,6 +23,7 @@
 #include "objects.h"
 #include "game.h"
 #include "clisp.h"
+#include "remaster/remaster_config.h"
 
 status_bar sbar;
 
@@ -107,6 +108,8 @@ void status_bar::redraw(image *screen)
 
     image *sb=cache.img(sbar);
 
+
+
     // status bar width & height
     int sb_w=(small_render ? sb->Size().x*2 : sb->Size().x),
     sb_h=(small_render ? sb->Size().y*2 : sb->Size().y);
@@ -132,7 +135,10 @@ void status_bar::redraw(image *screen)
     int sel_h=small_render ? cache.img(sbar_select)->Size().y*2 : cache.img(sbar_select)->Size().y;
 
     int sel_off=small_render ?  8 : 4;
-    scale_put(sb,screen,sx,sy,sb_w,sb_h);
+    if (RemasterConfig::get().enabled)
+      scale_put_trans(sb,screen,sx,sy,sb_w,sb_h);
+    else
+      scale_put(sb,screen,sx,sy,sb_w,sb_h);
 
     if (v->m_focus)
       draw_num(screen,sx+(small_render ? 17*2 : 17),sy+(small_render ? 11*2 : 11),v->m_focus->hp(),bnum);
@@ -270,7 +276,7 @@ void status_bar::draw_update()
       changed_cursor=0;
     }
 
-    if (need_rf)
+    if (need_rf || RemasterConfig::get().enabled)
       redraw(main_screen);
   }
 }
@@ -295,14 +301,17 @@ void status_bar::step()
   int sx1,sy1,sx2,sy2;
   area(sx1,sy1,sx2,sy2);
 
-  int view_y2=small_render ? (v->m_bb.y-v->m_aa.y+1)*2+v->m_aa.y : v->m_bb.y;
-  if (sy1<view_y2)     // tell view to shrink if it is overlapping the status bar
+  if (!RemasterConfig::get().enabled)
   {
-    v->suggest.send_view=1;
-    v->suggest.cx1 = v->m_aa.x;
-    v->suggest.cy1 = v->m_aa.y;
-    v->suggest.cx2 = v->m_bb.x;
-    v->suggest.cy2 = small_render ? (sy1 - v->m_aa.y - 2) / 2 + v->m_aa.y : sy1 - 2;
+    int view_y2=small_render ? (v->m_bb.y-v->m_aa.y+1)*2+v->m_aa.y : v->m_bb.y;
+    if (sy1<view_y2)     // tell view to shrink if it is overlapping the status bar
+    {
+      v->suggest.send_view=1;
+      v->suggest.cx1 = v->m_aa.x;
+      v->suggest.cy1 = v->m_aa.y;
+      v->suggest.cx2 = v->m_bb.x;
+      v->suggest.cy2 = small_render ? (sy1 - v->m_aa.y - 2) / 2 + v->m_aa.y : sy1 - 2;
+    }
   }
 
   if (sbar<=0 || !total_weapons) return ;

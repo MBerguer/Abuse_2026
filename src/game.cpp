@@ -736,7 +736,6 @@ void Game::draw_map(view *v, int interpolate)
 
   refresh = 0;
 
-
   // save the dirty rect routines some work by markinging evrything in the
   // view area dirty alreadt
 

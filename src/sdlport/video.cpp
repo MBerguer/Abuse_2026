@@ -526,9 +526,9 @@ void update_window_done()
         if (in_gameplay && sbar.get_area(sx1, sy1, sx2, sy2))
         {
             // UI Layer (Status Bar): sits on top of game world, unshaded by ambient darkness or raytracing
-            ui_u1 = 0.0f;
+            ui_u1 = (float)sx1 / (float)xres;
             ui_v1 = (float)sy1 / (float)yres;
-            ui_u2 = 1.0f;
+            ui_u2 = (float)sx2 / (float)xres;
             ui_v2 = 1.0f;
         }
 

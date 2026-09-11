@@ -222,8 +222,9 @@ void gamma_correct(palette *&pal, int force_menu)
 
     if(abort) dg = old_dg;
 
-    if(dg<1) dg = 1;
-    else if(dg>128) dg = 128;
+    if(dg <= 0) dg = 16; // Reference neutral calibration (gamma = 1.0)
+    else if(dg < 1) dg = 1;
+    else if(dg > 128) dg = 128;
 
     double gamma = log(dg / 255.0) / log(16.0 / 255.0);
 

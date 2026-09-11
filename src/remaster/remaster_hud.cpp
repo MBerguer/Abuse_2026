@@ -291,11 +291,12 @@ void RemasterHUD::draw_dashboard()
     char lights_str[64];
     snprintf(lights_str, sizeof(lights_str), "%d tracked", (int)RemasterLighting::get().get_lights().size());
     draw_row("Dynamic Light Sources:", true, lights_str);
+    draw_row("[F8] Gamma / Brightness:", true, "Interactive Calibration Dialog");
 
     // Footer
     cur_y = panel_y + panel_h - 32;
     fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, panel_x + 1, cur_y, panel_w - 2, 31, make_rgba(4, 8, 16, 220));
-    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, panel_x + 16, cur_y + 9, "CONTROLS: [F11] Remaster Toggle  |  [F12] Close Dashboard", text_cyan, 1, false);
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, panel_x + 16, cur_y + 9, "CONTROLS: [F8] Gamma  |  [F11] Remaster  |  [F12] Close", text_cyan, 1, false);
 }
 
 void RemasterHUD::render(int window_w, int window_h)
