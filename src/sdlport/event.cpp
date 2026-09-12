@@ -353,15 +353,20 @@ void EventHandler::SysEvent(Event &ev)
 			ev.key = JK_F9;		
 			break;
 
-		case SDLK_F10://toggle fullscreen, 			
-			if(ev.type==EV_KEYRELEASE) toggle_fullscreen();
+		case SDLK_F10: // Toggle Next-Gen HD PBR Textures (4K / PS5)
+			if(ev.type == EV_KEYRELEASE)
+			{
+				RemasterConfig::get().toggle_hd();
+				if (the_game)
+					the_game->show_help(RemasterConfig::get().notification_text.c_str());
+			}
 			ev.key = JK_F10;
 			break;
 
-		case SDLK_F11: // Toggle Remaster Mode
+		case SDLK_F11: // Cycle Render Modes (Classic 1995 -> Classic+RT -> HD PBR)
 			if(ev.type == EV_KEYRELEASE)
 			{
-				RemasterConfig::get().toggle_remaster();
+				RemasterConfig::get().cycle_render_mode();
 				if (the_game)
 					the_game->show_help(RemasterConfig::get().notification_text.c_str());
 			}

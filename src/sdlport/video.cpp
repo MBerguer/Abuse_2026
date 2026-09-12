@@ -495,25 +495,26 @@ void update_window_done()
 
         if (RemasterConfig::get().enabled && in_gameplay && player_list)
         {
-            int p_world_x = 0, p_world_y = 0;
+            int p_world_x = player_list->x_center();
+            int p_world_y = player_list->y_center() - 16;
+            int muzzle_world_x = p_world_x;
+            int muzzle_world_y = p_world_y;
             float aim_dir_x = 0.0f, aim_dir_y = 0.0f;
-            if (!get_player_muzzle_pos(player_list, p_world_x, p_world_y, aim_dir_x, aim_dir_y))
-            {
-                p_world_x = player_list->x_center();
-                p_world_y = player_list->y_center() - 16;
-            }
+            get_player_muzzle_pos(player_list, muzzle_world_x, muzzle_world_y, aim_dir_x, aim_dir_y);
 
             int aim_world_x = player_list->pointer_x;
             int aim_world_y = player_list->pointer_y;
 
             ivec2 p_screen = the_game ? the_game->GameToMouse(ivec2(p_world_x, p_world_y), player_list)
                                       : ivec2(p_world_x - player_list->xoff(), p_world_y - player_list->yoff());
+            ivec2 m_screen = the_game ? the_game->GameToMouse(ivec2(muzzle_world_x, muzzle_world_y), player_list)
+                                      : ivec2(muzzle_world_x - player_list->xoff(), muzzle_world_y - player_list->yoff());
             ivec2 aim_screen = the_game ? the_game->GameToMouse(ivec2(aim_world_x, aim_world_y), player_list)
                                         : ivec2(aim_world_x - player_list->xoff(), aim_world_y - player_list->yoff());
 
             if (aim_world_x == 0 && aim_world_y == 0)
             {
-                aim_screen = ivec2(p_screen.x + 120, p_screen.y);
+                aim_screen = ivec2(m_screen.x + 120, m_screen.y);
             }
 
             RemasterLighting::get().update_frame_lights(
@@ -521,7 +522,8 @@ void update_window_done()
                 p_screen.x, p_screen.y,
                 aim_screen.x, aim_screen.y,
                 player_list->b1_suggestion != 0,
-                aim_dir_x, aim_dir_y
+                aim_dir_x, aim_dir_y,
+                m_screen.x, m_screen.y
             );
         }
         else

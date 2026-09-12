@@ -58,7 +58,7 @@ void main()
 }
 )";
 
-// G-Buffer Generation: Separates Albedo, Generates Normals (Sobel filter), Extracts Emission & Occlusion
+// G-Buffer Generation: Separates Albedo, Generates Normals (Sobel/Scharr filter), Extracts Emission & Occlusion
 static const char *gbuffer_fs = R"(#version 330 core
 in vec2 TexCoords;
 layout (location = 0) out vec4 gAlbedo;
@@ -67,8 +67,10 @@ layout (location = 2) out vec4 gEmission;
 layout (location = 3) out vec4 gOcclusion;
 
 uniform sampler2D u_scene;
-uniform vec2 u_texel_size;
+uniform vec2 u_src_size;
+uniform vec2 u_fbo_size;
 uniform float u_normal_strength;
+uniform int u_hd_scaler;
 
 const int MAX_UI_RECTS = 16;
 uniform int u_num_ui_rects;
@@ -87,13 +89,118 @@ bool is_in_ui(vec2 uv)
     return false;
 }
 
+// Perceptual color difference in YUV space
+float xbr_df(vec4 c1, vec4 c2)
+{
+    vec3 yuv_w = vec3(0.299, 0.587, 0.114);
+    float y1 = dot(c1.rgb, yuv_w);
+    float y2 = dot(c2.rgb, yuv_w);
+    float u1 = -0.14713 * c1.r - 0.28886 * c1.g + 0.436 * c1.b;
+    float u2 = -0.14713 * c2.r - 0.28886 * c2.g + 0.436 * c2.b;
+    float v1 = 0.615 * c1.r - 0.51499 * c1.g - 0.10001 * c1.b;
+    float v2 = 0.615 * c2.r - 0.51499 * c2.g - 0.10001 * c2.b;
+    vec3 diff = vec3((y1 - y2) * 4.0, u1 - u2, v1 - v2);
+    float da = abs(c1.a - c2.a) * 2.0;
+    return sqrt(dot(diff, diff) + da * da);
+}
+
+vec4 get_texel(vec2 base_pos, vec2 offset)
+{
+    vec2 sample_coord = (base_pos + offset + 0.5) / u_src_size;
+    sample_coord = clamp(sample_coord, vec2(0.5) / u_src_size, vec2(1.0) - vec2(0.5) / u_src_size);
+    return texture(u_scene, sample_coord);
+}
+
+// xBR Real-Time Edge-Directed High-Definition Reconstruction
+vec4 sample_xbr_hd(vec2 uv)
+{
+    vec2 pos = uv * u_src_size;
+    vec2 base = floor(pos);
+    vec2 sub = fract(pos); // subpixel within texel [0, 1]
+
+    // Determine quadrant direction and quadrant-relative subtexel coordinates
+    vec2 dir = vec2(sub.x >= 0.5 ? 1.0 : -1.0, sub.y >= 0.5 ? 1.0 : -1.0);
+    vec2 q = abs((sub - 0.5) * 2.0); // [0, 1] from center to corner
+
+    vec4 ce = get_texel(base, vec2(0.0, 0.0));
+    vec4 cf = get_texel(base, vec2(dir.x, 0.0));
+    vec4 ch = get_texel(base, vec2(0.0, dir.y));
+    vec4 ci = get_texel(base, vec2(dir.x, dir.y));
+
+    vec4 cc = get_texel(base, vec2(dir.x, -dir.y));
+    vec4 cg = get_texel(base, vec2(-dir.x, dir.y));
+    vec4 cb = get_texel(base, vec2(0.0, -dir.y));
+    vec4 cd = get_texel(base, vec2(-dir.x, 0.0));
+
+    vec4 cf4 = get_texel(base, vec2(2.0 * dir.x, 0.0));
+    vec4 ch5 = get_texel(base, vec2(0.0, 2.0 * dir.y));
+    vec4 ci4 = get_texel(base, vec2(2.0 * dir.x, dir.y));
+    vec4 ci5 = get_texel(base, vec2(dir.x, 2.0 * dir.y));
+
+    // xBR Weight Calculation: Compares diagonal edge vs perpendicular edge
+    float w_edge = xbr_df(ce, cc) + xbr_df(ce, cg) + xbr_df(ci, cf4) + xbr_df(ci, ch5) + 4.0 * xbr_df(ch, cf);
+    float w_opp  = xbr_df(ch, cd) + xbr_df(ch, ci4) + xbr_df(cf, cb) + xbr_df(cf, ci5) + 4.0 * xbr_df(ce, ci);
+    float contrast = xbr_df(ce, ci);
+
+    // Only apply xBR corner slicing on REAL structural edges (contrast > 0.12)
+    // Avoids turning subtle retro dither noise into weird watercolor slugs
+    if (w_edge < w_opp && contrast > 0.12)
+    {
+        // Edge detected slicing this corner!
+        vec4 c_edge = (q.x > q.y) ? cf : ch;
+        if (xbr_df(ch, cf) < 0.18)
+        {
+            c_edge = mix(ch, cf, 0.5);
+        }
+
+        // 45-degree diagonal distance
+        float d45 = (q.x + q.y - 1.0) / 1.41421356;
+
+        // Extended slopes (steep & shallow)
+        bool is_shallow = xbr_df(ce, cc) < xbr_df(ce, cg);
+        float d_shallow = (2.0 * q.x + q.y - 2.0) / 2.23606797;
+
+        bool is_steep = xbr_df(ce, cg) < xbr_df(ce, cc);
+        float d_steep = (q.x + 2.0 * q.y - 2.0) / 2.23606797;
+
+        float dist = d45;
+        if (is_shallow && d_shallow > dist) dist = max(dist, d_shallow);
+        if (is_steep && d_steep > dist) dist = max(dist, d_steep);
+
+        // Sub-pixel anti-aliasing width tailored to HD resolution
+        float aa_width = length(fwidth(q)) * 0.75;
+        aa_width = clamp(aa_width, 0.04, 0.20);
+
+        float blend = smoothstep(-aa_width, aa_width, dist);
+        return mix(ce, c_edge, blend);
+    }
+
+    // Smart De-Dithering: Inside flat panels (contrast < 0.10), gently blend local dither noise into solid clean material
+    if (contrast < 0.10)
+    {
+        vec4 avg_neighbor = (ce * 2.0 + cf + ch + cb + cd) / 6.0;
+        float de_dither = smoothstep(0.10, 0.01, contrast) * 0.45;
+        return mix(ce, avg_neighbor, de_dither);
+    }
+
+    return ce;
+}
+
+vec4 sample_pixel(vec2 uv)
+{
+    if (u_hd_scaler == 1)
+        return sample_xbr_hd(uv);
+    else
+        return texture(u_scene, uv);
+}
+
 void main()
 {
-    vec4 col = texture(u_scene, TexCoords);
-    gAlbedo = col;
+    vec4 col = sample_pixel(TexCoords);
 
     if (is_in_ui(TexCoords))
     {
+        gAlbedo = col;
         // UI Layer (Higher Z-Index): flat surface normal, never occludes or casts shadows into world
         gNormal = vec4(0.5, 0.5, 1.0, 1.0);
         gOcclusion = vec4(0.0, 0.0, 0.0, 1.0);
@@ -110,15 +217,15 @@ void main()
         return;
     }
 
-    // Normal generation via Sobel operator on luminance
-    float l = dot(texture(u_scene, TexCoords - vec2(u_texel_size.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
-    float r = dot(texture(u_scene, TexCoords + vec2(u_texel_size.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
-    float d = dot(texture(u_scene, TexCoords - vec2(0.0, u_texel_size.y)).rgb, vec3(0.299, 0.587, 0.114));
-    float u = dot(texture(u_scene, TexCoords + vec2(0.0, u_texel_size.y)).rgb, vec3(0.299, 0.587, 0.114));
+    // High-resolution Normal generation:
+    vec2 step_offset = (u_hd_scaler == 1) ? (vec2(1.0) / u_fbo_size) : (vec2(1.0) / u_src_size);
+    float l = dot(sample_pixel(TexCoords - vec2(step_offset.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+    float r = dot(sample_pixel(TexCoords + vec2(step_offset.x, 0.0)).rgb, vec3(0.299, 0.587, 0.114));
+    float d = dot(sample_pixel(TexCoords - vec2(0.0, step_offset.y)).rgb, vec3(0.299, 0.587, 0.114));
+    float u = dot(sample_pixel(TexCoords + vec2(0.0, step_offset.y)).rgb, vec3(0.299, 0.587, 0.114));
 
-    float dx = (l - r) * u_normal_strength;
-    float dy = (d - u) * u_normal_strength;
-    vec3 n = normalize(vec3(dx, dy, 1.0));
+    float dx = (l - r) * (u_normal_strength * (u_hd_scaler == 1 ? 2.5 : 1.0));
+    float dy = (d - u) * (u_normal_strength * (u_hd_scaler == 1 ? 2.5 : 1.0));
 
     // Material detection: metallic, roughness, and water/liquid for PBR lighting & reflections
     float lum = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
@@ -126,17 +233,26 @@ void main()
     float min_c = min(min(col.r, col.g), col.b);
     float sat = (max_c > 0.01) ? (max_c - min_c) / max_c : 0.0;
 
-    // Metallic surfaces (metal pipes, armor, rails, machinery, steel walkways):
-    // Low saturation, neutral or blue-gray tint, mid-to-high luminance
-    float metallic = clamp((1.0 - sat * 1.6) * smoothstep(0.10, 0.45, lum), 0.0, 0.90);
-    float roughness = clamp(0.18 + sat * 0.55 + (1.0 - lum) * 0.35, 0.12, 0.90);
+    // Metallic & Industrial Alloy surfaces:
+    // 1. Neutral bare steel / silver / titanium / machinery (low saturation, mid-to-high lum)
+    bool isBareMetal = (sat < 0.35 && lum > 0.08);
+    // 2. Painted military alloy / green industrial steel panels (olive drab / green modular plates)
+    bool isPaintedSteel = (col.g > col.r * 0.82 && col.g > col.b && lum > 0.08 && lum < 0.70);
+    // 3. Bronze / copper conduits / rusty industrial rails
+    bool isAlloy = (col.r > col.b * 1.15 && lum > 0.10 && lum < 0.65);
+
+    float metallic = 0.0;
+    if (isBareMetal) metallic = clamp((1.0 - sat * 1.5) * smoothstep(0.10, 0.40, lum), 0.35, 0.95);
+    else if (isPaintedSteel) metallic = 0.68;
+    else if (isAlloy) metallic = 0.55;
+
+    float roughness = clamp(0.18 + sat * 0.45 + (1.0 - lum) * 0.30, 0.15, 0.85);
+    if (isPaintedSteel) roughness = 0.28;
+    if (isBareMetal) roughness = 0.20;
 
     // Liquid & Wet Surface detection:
-    // 1. Toxic radioactive acid pools (vibrant greens)
     bool isAcid = (col.g > 0.35 && col.r < 0.28 && col.b < 0.30);
-    // 2. Dark water pools & wet floor basins
     bool isWater = (col.b > 0.16 && col.b >= col.r && col.g >= col.r * 0.7 && lum < 0.45);
-    // 3. Polished damp catwalks & wet floor tiles
     bool isWetFloor = (metallic > 0.35 && lum < 0.30);
 
     float water = 0.0;
@@ -158,20 +274,40 @@ void main()
         roughness = 0.12;
     }
 
-    // High-frequency procedural micro-surface detail (prevents flat chunky look at 4K)
-    if (metallic > 0.25)
+    // High-Resolution Sci-Fi Modular Panel Detailing (active when HD scaler is ON)
+    if (u_hd_scaler == 1)
     {
-        // Brushed anisotropic micro-grooves along metal plates
-        float brush = sin(TexCoords.y * 3200.0) * 0.10 * (1.0 - roughness);
-        n = normalize(n + vec3(0.0, brush, 0.0));
-    }
-    else if (water > 0.1)
-    {
-        // Liquid surface micro-ripples
-        float wave = (sin(TexCoords.x * 500.0) + cos(TexCoords.y * 400.0)) * 0.08;
-        n = normalize(n + vec3(wave, wave * 0.5, 0.0));
+        vec2 world_pixel = TexCoords * u_fbo_size;
+        vec2 tile_uv = fract(TexCoords * u_src_size); // [0, 1] across each 16x16 tile
+        vec2 edge_dist = min(tile_uv, 1.0 - tile_uv);
+        float seam_dist = min(edge_dist.x, edge_dist.y);
+
+        // 1. Crisp Recessed Panel Seams (every 16x16 tile border)
+        float seam_ao = smoothstep(0.0, 0.07, seam_dist);
+        col.rgb *= mix(0.72, 1.0, seam_ao); // Ambient occlusion crevice groove
+
+        // 2. Beveled Edge Normals (catches rim lighting on plate borders)
+        vec2 bevel = vec2(0.0);
+        if (edge_dist.x < 0.09) bevel.x = (tile_uv.x < 0.5 ? 1.0 : -1.0) * (1.0 - edge_dist.x / 0.09);
+        if (edge_dist.y < 0.09) bevel.y = (tile_uv.y < 0.5 ? 1.0 : -1.0) * (1.0 - edge_dist.y / 0.09);
+
+        // 3. High-Frequency Brushed Cold-Rolled Steel Grain
+        float hash1 = fract(sin(dot(floor(world_pixel), vec2(12.9898, 78.233))) * 43758.5453);
+        float hash2 = fract(sin(dot(floor(world_pixel), vec2(93.9898, 67.345))) * 24634.6345);
+        float micro_grain = (hash1 - 0.5) * 0.045 * metallic;
+        col.rgb += vec3(micro_grain);
+
+        // 4. Micro-Normal Perturbation (anisotropic brushed steel reflection)
+        vec2 micro_n = (vec2(hash1, hash2) - 0.5) * 0.18 * metallic;
+        float brush = sin(world_pixel.y * 1.5) * 0.06 * metallic;
+
+        dx += bevel.x * 1.6 + micro_n.x;
+        dy += bevel.y * 1.6 + micro_n.y + brush;
     }
 
+    gAlbedo = col;
+
+    vec3 n = normalize(vec3(dx, dy, 1.0));
     gNormal = vec4(n * 0.5 + 0.5, roughness);
 
     // Emission detection: Lasers, plasma, computer screens, door sensors, switches, sparks, fire
@@ -244,31 +380,31 @@ bool is_in_ui(vec2 uv)
     return false;
 }
 
+uniform float u_aspect;
+uniform int u_volumetric_enabled;
+
 float trace_shadow(vec2 frag_pos, vec2 light_pos, float light_radius)
 {
     if (u_raytracing_enabled == 0) return 1.0;
 
     vec2 ray = light_pos - frag_pos;
-    float dist = length(ray);
+    float dist = length(vec2(ray.x * u_aspect, ray.y));
     if (dist < 0.001) return 1.0;
-    vec2 dir = ray / dist;
 
     int steps = (u_shadow_quality == 2) ? 28 : (u_shadow_quality == 1 ? 16 : 8);
-    float step_size = dist / float(steps);
     float shadow = 1.0;
 
     // Start from step 2 to avoid self-shadowing at the surface
     for (int i = 2; i < steps; i++)
     {
-        vec2 sample_pos = frag_pos + dir * (float(i) * step_size);
+        vec2 sample_pos = frag_pos + ray * (float(i) / float(steps));
         float occ = texture(u_occlusion, sample_pos).r;
         if (occ > 0.5)
         {
             if (u_soft_shadows == 1)
             {
                 // Soft shadow penumbra approximation based on distance
-                float current_dist = float(i) * step_size;
-                float penumbra = (dist - current_dist) / dist;
+                float penumbra = 1.0 - float(i) / float(steps);
                 shadow = min(shadow, penumbra * 0.55);
                 if (shadow <= 0.05) return 0.0;
             }
@@ -280,8 +416,6 @@ float trace_shadow(vec2 frag_pos, vec2 light_pos, float light_radius)
     }
     return clamp(shadow, 0.0, 1.0);
 }
-
-uniform int u_volumetric_enabled;
 
 void main()
 {
@@ -321,8 +455,9 @@ void main()
     {
         Light light = u_lights[i];
         vec2 light_screen = light.position.xy;
-        vec2 dir_2d = light_screen - TexCoords;
-        float dist_2d = length(dir_2d);
+        vec2 dir_to_light = light_screen - TexCoords;
+        vec2 dir_to_light_aspect = vec2(dir_to_light.x * u_aspect, dir_to_light.y);
+        float dist_2d = length(dir_to_light_aspect);
 
         if (dist_2d > light.radius) continue;
 
@@ -330,11 +465,14 @@ void main()
         float spot_factor = 1.0;
         if (light.is_spot == 1)
         {
-            vec2 to_pixel = normalize(TexCoords - light_screen);
-            float angle_cos = dot(to_pixel, normalize(light.spot_dir));
-            if (angle_cos < light.spot_cutoff)
+            if (dist_2d > 0.0001)
             {
-                spot_factor = smoothstep(light.spot_cutoff - 0.14, light.spot_cutoff, angle_cos);
+                vec2 to_pixel = -dir_to_light_aspect / dist_2d;
+                float angle_cos = dot(to_pixel, normalize(light.spot_dir));
+                if (angle_cos < light.spot_cutoff)
+                {
+                    spot_factor = smoothstep(light.spot_cutoff - 0.14, light.spot_cutoff, angle_cos);
+                }
             }
         }
 
@@ -353,8 +491,8 @@ void main()
 
         if (shadow <= 0.001 || spot_factor <= 0.001) continue;
 
-        // 3D Direction to light
-        vec3 light_dir = normalize(vec3(dir_2d, light.position.z));
+        // 3D Direction to light (isotropic in physical screen space)
+        vec3 light_dir = normalize(vec3(dir_to_light_aspect, light.position.z));
         float diff = max(dot(normal, light_dir), 0.0);
 
         // Specular (Blinn-Phong) with material roughness & metallic response

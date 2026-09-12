@@ -32,6 +32,9 @@ public:
     static void render_classic(const void *pixel_data, int src_w, int src_h, int window_w, int window_h);
     static void capture_screenshot(const char *filepath, int window_w, int window_h);
 
+    static void begin_object_drawing(void *screen_ptr);
+    static void end_object_drawing(void *screen_ptr);
+
     static void render_quad();
     static bool compile_shader(GLuint &program, const char *vs_src, const char *fs_src);
 
@@ -43,11 +46,16 @@ private:
     static bool s_initialized;
     static int s_width;
     static int s_height;
+    static int s_fbo_w;
+    static int s_fbo_h;
 
     static GLuint s_quad_vao;
     static GLuint s_quad_vbo;
 
     static GLuint s_source_texture;
+    static GLuint s_sprite_mask_texture;
+    static std::vector<uint8_t> s_tile_snapshot;
+    static std::vector<uint8_t> s_sprite_mask;
 
     // Shader programs
     static GLuint s_classic_prog;

@@ -43,6 +43,8 @@
 #include "remaster/remaster_timing.h"
 #include "remaster/remaster_config.h"
 #include "remaster/remaster_audio.h"
+#include "remaster/remaster_hd.h"
+#include "remaster/remaster_gl.h"
 
 #include "id.h"
 #include "timing.h"
@@ -976,6 +978,7 @@ void Game::draw_map(view *v, int interpolate)
   int32_t ro = rand_on;
   if(dev & DRAW_PEOPLE_LAYER)
   {
+    RemasterGL::begin_object_drawing(main_screen);
     if(interpolate)
       current_level->interpolate_draw_objects(v);
     else
@@ -989,6 +992,9 @@ void Game::draw_map(view *v, int interpolate)
   {
 
     draw_panims(v);
+
+    if(dev & DRAW_PEOPLE_LAYER)
+      RemasterGL::end_object_drawing(main_screen);
 
     if(dev & DRAW_FG_LAYER && rescan)
     {
@@ -1174,7 +1180,7 @@ void Game::request_level_load(std::string name)
 
 extern int start_doubled;
 
-template<int N> static void Fade(image *im, int steps)
+template<int N> static bool Fade(image *im, int steps)
 {
     /* 25ms per step */
     float const duration = 25.f;
@@ -1188,9 +1194,22 @@ template<int N> static void Fade(image *im, int steps)
                                    - im->Size() / 2);
     }
 
+    bool skipped = false;
     for (Timer total; total.PollMs() < duration * steps; )
     {
         Timer frame;
+        Event ev;
+        while (wm->IsPending())
+        {
+            wm->get_event(ev);
+            if (ev.type == EV_KEY || ev.type == EV_MOUSE_BUTTON)
+            {
+                skipped = true;
+                break;
+            }
+        }
+        if (skipped) break;
+
         uint8_t *sl1 = (uint8_t *)pal->addr();
         uint8_t *sl2 = (uint8_t *)old_pal->addr();
         int i = (int)(total.PollMs() / duration);
@@ -1204,7 +1223,7 @@ template<int N> static void Fade(image *im, int steps)
         frame.WaitMs(duration);
     }
 
-    if (N == 0)
+    if (N == 0 || skipped)
     {
         main_screen->clear();
         wm->flush_screen();
@@ -1212,6 +1231,7 @@ template<int N> static void Fade(image *im, int steps)
     }
     delete pal;
     pal = old_pal;
+    return skipped;
 }
 
 void fade_in(image *im, int steps)
@@ -1258,11 +1278,23 @@ void do_title()
     delete blank;
 	
 	//AR diplay logo
-	if(settings.hires==2) fade_in(cache.img(cache.reg("art/title.spe","cdc_logo_hires",SPEC_IMAGE,1)),32);	
-	else fade_in(cache.img(cdc_logo),32);
-    Timer tmp;
-	tmp.WaitMs(400);
-    fade_out(32);
+	bool skip = (settings.hires==2) ? Fade<1>(cache.img(cache.reg("art/title.spe","cdc_logo_hires",SPEC_IMAGE,1)),32)
+	                                : Fade<1>(cache.img(cdc_logo),32);
+    if (skip) return;
+
+    for (Timer tmp; tmp.PollMs() < 400.f; )
+    {
+        Event ev;
+        while (wm->IsPending())
+        {
+            wm->get_event(ev);
+            if (ev.type == EV_KEY || ev.type == EV_MOUSE_BUTTON)
+                return;
+        }
+        Timer f; f.WaitMs(15.f);
+    }
+
+    if (Fade<0>(NULL, 32)) return;
 
 	void *space_snd = LSymbol::FindOrCreate("SPACE_SND")->GetValue();
     char *str = lstring_value(LSymbol::FindOrCreate("plot_start")->Eval());
@@ -1339,8 +1371,12 @@ void do_title()
 
             wm->flush_screen(); 
 			
-			while(wm->IsPending() && ev.type!=EV_KEY)
+			while(wm->IsPending())
+            {
                 wm->get_event(ev);
+                if (ev.type == EV_KEY || ev.type == EV_MOUSE_BUTTON)
+                    break;
+            }
 
             if((i % 5) == 0 && DEFINEDP(space_snd) && (sound_avail & SFX_INITIALIZED))
                 cache.sfx(lnumber_value(space_snd))->play(sfx_volume * 90 / 127);

@@ -63,7 +63,8 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
                                            int player_screen_x, int player_screen_y,
                                            int aim_screen_x, int aim_screen_y,
                                            bool player_firing,
-                                           float aim_dir_x, float aim_dir_y)
+                                           float aim_dir_x, float aim_dir_y,
+                                           int muzzle_screen_x, int muzzle_screen_y)
 {
     clear();
 
@@ -93,14 +94,17 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
         float px = (float)player_screen_x / (float)view_w;
         float py = (float)player_screen_y / (float)view_h;
 
+        float mx = (muzzle_screen_x >= 0) ? (float)muzzle_screen_x / (float)view_w : px;
+        float my = (muzzle_screen_y >= 0) ? (float)muzzle_screen_y / (float)view_h : py;
+
         float dx = aim_dir_x;
         float dy = aim_dir_y;
         if (std::abs(dx) < 0.0001f && std::abs(dy) < 0.0001f)
         {
             float ax = (float)aim_screen_x / (float)view_w;
             float ay = (float)aim_screen_y / (float)view_h;
-            dx = ax - px;
-            dy = ay - py;
+            dx = ax - mx;
+            dy = ay - my;
             float len = std::sqrt(dx * dx + dy * dy);
             if (len > 0.0001f)
             {
@@ -114,22 +118,27 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
             }
         }
 
-        // 2a. Player subtle body presence (dim ambient glow around character)
+        // 2a. Player subtle body presence (dim ambient glow around character torso)
         add_point_light(px, py, 0.06f, 1.0f, 0.98f, 0.95f, 0.08f, 0.30f);
 
-        // 2b. Tactical Weapon-Mounted Directional Flashlight (starts directly at muzzle, pointing outward)
-        float spot_intensity = player_firing ? 2.8f : 2.2f;
-        float spot_radius = player_firing ? 0.65f : 0.58f;
-        float spot_cutoff = 0.70f; // ~45 degree tactical beam cone
-        add_spot_light(px + dx * 0.015f, py + dy * 0.015f, 0.05f,
-                       1.0f, 0.97f, 0.92f,
+        // 2b. Tactical Weapon-Mounted Directional Flashlight (starts directly at muzzle tip, pointing outward)
+        float spot_intensity = player_firing ? 3.0f : 2.5f;
+        float spot_radius = player_firing ? 0.72f : 0.65f;
+        float spot_cutoff = 0.72f; // ~45 degree tactical beam cone
+        add_spot_light(mx, my, 0.05f,
+                       1.0f, 0.98f, 0.94f,
                        spot_radius, spot_intensity,
                        dx, dy, spot_cutoff);
 
-        // 2c. Dynamic muzzle flash burst when firing
+        // Flashlight lens emitter core: brilliant tactical core right on the weapon muzzle tip
+        add_point_light(mx, my, 0.025f,
+                        1.0f, 0.98f, 0.95f,
+                        0.04f, 1.8f);
+
+        // 2c. Dynamic muzzle flash burst when firing (anchored right at muzzle tip)
         if (player_firing)
         {
-            add_point_light(px + dx * 0.035f, py + dy * 0.035f, 0.04f, 1.0f, 0.90f, 0.45f, 0.28f, 3.2f);
+            add_point_light(mx, my, 0.04f, 1.0f, 0.90f, 0.45f, 0.28f, 3.2f);
         }
     }
 

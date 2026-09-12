@@ -3,17 +3,27 @@
 #include "remaster_config.h"
 #include "remaster_lighting.h"
 #include "remaster_hud.h"
+#include "remaster_hd.h"
+#include "common.h"
+#include "image.h"
 
 #include <iostream>
 #include <vector>
+#include <cstring>
 
 bool RemasterGL::s_initialized = false;
 int RemasterGL::s_width = 320;
 int RemasterGL::s_height = 200;
+int RemasterGL::s_fbo_w = 1920;
+int RemasterGL::s_fbo_h = 1200;
 
 GLuint RemasterGL::s_quad_vao = 0;
 GLuint RemasterGL::s_quad_vbo = 0;
 GLuint RemasterGL::s_source_texture = 0;
+GLuint RemasterGL::s_sprite_mask_texture = 0;
+
+std::vector<uint8_t> RemasterGL::s_tile_snapshot;
+std::vector<uint8_t> RemasterGL::s_sprite_mask;
 
 GLuint RemasterGL::s_classic_prog = 0;
 GLuint RemasterGL::s_gbuffer_prog = 0;
@@ -88,6 +98,10 @@ void RemasterGL::init_fbo(int w, int h)
     s_width = w;
     s_height = h;
 
+    const int SCALE_FACTOR = 6;
+    s_fbo_w = w * SCALE_FACTOR;
+    s_fbo_h = h * SCALE_FACTOR;
+
     // Delete existing if resizing
     if (s_gbuffer_fbo)
     {
@@ -106,20 +120,20 @@ void RemasterGL::init_fbo(int w, int h)
     glGenFramebuffers(1, &s_gbuffer_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, s_gbuffer_fbo);
 
-    auto create_tex = [w, h](GLuint &tex, GLenum internalFormat, GLenum format, GLenum type, GLint filter) {
+    auto create_tex = [](GLuint &tex, GLenum internalFormat, GLenum format, GLenum type, GLint filter, int tw, int th) {
         glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
-        glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, w, h, 0, format, type, nullptr);
+        glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, tw, th, 0, format, type, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     };
 
-    create_tex(s_g_albedo, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
-    create_tex(s_g_normal, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
-    create_tex(s_g_emission, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR);
-    create_tex(s_g_occlusion, GL_R8, GL_RED, GL_UNSIGNED_BYTE, GL_LINEAR);
+    create_tex(s_g_albedo, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR, s_fbo_w, s_fbo_h);
+    create_tex(s_g_normal, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR, s_fbo_w, s_fbo_h);
+    create_tex(s_g_emission, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, s_fbo_w, s_fbo_h);
+    create_tex(s_g_occlusion, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR, s_fbo_w, s_fbo_h);
 
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_g_albedo, 0);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, s_g_normal, 0);
@@ -132,17 +146,17 @@ void RemasterGL::init_fbo(int w, int h)
     // 2. Lit Scene FBO
     glGenFramebuffers(1, &s_lit_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, s_lit_fbo);
-    create_tex(s_lit_texture, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR);
+    create_tex(s_lit_texture, GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, s_fbo_w, s_fbo_h);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_lit_texture, 0);
 
     // 3. Bloom Ping-Pong FBOs (Downsampled half size for performance and wider radius)
-    int bw = std::max(1, w / 2);
-    int bh = std::max(1, h / 2);
+    int bw = std::max(1, s_fbo_w / 2);
+    int bh = std::max(1, s_fbo_h / 2);
     glGenFramebuffers(2, s_bloom_fbo);
     for (int i = 0; i < 2; i++)
     {
         glBindFramebuffer(GL_FRAMEBUFFER, s_bloom_fbo[i]);
-        create_tex(s_bloom_texture[i], GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR);
+        create_tex(s_bloom_texture[i], GL_RGBA16F, GL_RGBA, GL_FLOAT, GL_LINEAR, bw, bh);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_bloom_texture[i], 0);
     }
 
@@ -193,6 +207,7 @@ bool RemasterGL::init(int screen_w, int screen_h)
 
     init_fbo(screen_w, screen_h);
     RemasterHUD::get().init();
+    RemasterHD::get().init();
 
     s_initialized = true;
     std::cout << "[RemasterGL] Initialized Modern 2D Deferred GPU Pipeline (GL 3.3 Core)." << std::endl;
@@ -204,10 +219,18 @@ void RemasterGL::shutdown()
     if (!s_initialized) return;
 
     RemasterHUD::get().cleanup();
+    RemasterHD::get().cleanup();
 
     glDeleteVertexArrays(1, &s_quad_vao);
     glDeleteBuffers(1, &s_quad_vbo);
     glDeleteTextures(1, &s_source_texture);
+    if (s_sprite_mask_texture)
+    {
+        glDeleteTextures(1, &s_sprite_mask_texture);
+        s_sprite_mask_texture = 0;
+    }
+    s_tile_snapshot.clear();
+    s_sprite_mask.clear();
 
     glDeleteProgram(s_classic_prog);
     glDeleteProgram(s_gbuffer_prog);
@@ -229,6 +252,32 @@ void RemasterGL::shutdown()
     }
 
     s_initialized = false;
+}
+
+void RemasterGL::begin_object_drawing(void *screen_ptr)
+{
+    image *im = static_cast<image *>(screen_ptr);
+    if (!im) return;
+    int size = im->Size().x * im->Size().y;
+    if (s_tile_snapshot.size() < (size_t)size)
+        s_tile_snapshot.resize(size);
+    std::memcpy(s_tile_snapshot.data(), im->scan_line(0), size);
+}
+
+void RemasterGL::end_object_drawing(void *screen_ptr)
+{
+    image *im = static_cast<image *>(screen_ptr);
+    if (!im) return;
+    int size = im->Size().x * im->Size().y;
+    if (s_sprite_mask.size() < (size_t)size)
+        s_sprite_mask.resize(size);
+
+    const uint8_t *cur = im->scan_line(0);
+    const uint8_t *snap = s_tile_snapshot.data();
+    for (int i = 0; i < size; i++)
+    {
+        s_sprite_mask[i] = (cur[i] != snap[i]) ? 255 : 0;
+    }
 }
 
 void RemasterGL::resize(int screen_w, int screen_h)
@@ -318,6 +367,7 @@ void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, in
     auto &cfg = RemasterConfig::get();
 
     // Update source texture
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_source_texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, src_w, src_h, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixel_data);
 
@@ -358,7 +408,7 @@ void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, in
     render_quad();
 
     // Remaster HUD & Notification pass
-    RemasterHUD::get().render(window_w, window_h, 0, 0, window_w, window_h, src_w, src_h);
+    RemasterHUD::get().render(window_w, window_h, vp_x, vp_y, vp_w, vp_h, src_w, src_h);
 
     check_dump_screenshot(window_w, window_h);
 }
@@ -371,7 +421,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     s_time += 0.01667f;
     auto &cfg = RemasterConfig::get();
 
-    if (!cfg.enabled)
+    if (!cfg.enabled || !in_gameplay)
     {
         render_classic(pixel_data, src_w, src_h, window_w, window_h);
         return;
@@ -394,12 +444,13 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     }
 
     // 1. Upload scene pixel data to GPU texture
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_source_texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, src_w, src_h, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixel_data);
 
     // 2. G-Buffer Pass: Extract Albedo, Normal (Sobel filter), Emission, Occlusion
     glBindFramebuffer(GL_FRAMEBUFFER, s_gbuffer_fbo);
-    glViewport(0, 0, src_w, src_h);
+    glViewport(0, 0, s_fbo_w, s_fbo_h);
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(s_gbuffer_prog);
@@ -412,14 +463,16 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, s_source_texture);
     glUniform1i(glGetUniformLocation(s_gbuffer_prog, "u_scene"), 0);
-    glUniform2f(glGetUniformLocation(s_gbuffer_prog, "u_texel_size"), 1.0f / src_w, 1.0f / src_h);
+    glUniform2f(glGetUniformLocation(s_gbuffer_prog, "u_src_size"), (float)src_w, (float)src_h);
+    glUniform2f(glGetUniformLocation(s_gbuffer_prog, "u_fbo_size"), (float)s_fbo_w, (float)s_fbo_h);
+    glUniform1i(glGetUniformLocation(s_gbuffer_prog, "u_hd_scaler"), cfg.hd_textures ? 1 : 0);
     glUniform1f(glGetUniformLocation(s_gbuffer_prog, "u_normal_strength"), cfg.normal_strength);
 
     render_quad();
 
     // 3. 2D Ray Tracing & Dynamic Lighting Pass
     glBindFramebuffer(GL_FRAMEBUFFER, s_lit_fbo);
-    glViewport(0, 0, src_w, src_h);
+    glViewport(0, 0, s_fbo_w, s_fbo_h);
     glClear(GL_COLOR_BUFFER_BIT);
 
     glUseProgram(s_raytracing_prog);
@@ -450,6 +503,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     const auto &lights = in_gameplay ? RemasterLighting::get().get_lights() : std::vector<GPULight>{};
     int num_lights = in_gameplay ? std::min((int)lights.size(), RemasterLighting::MAX_LIGHTS) : 0;
     glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_num_lights"), num_lights);
+    glUniform1f(glGetUniformLocation(s_raytracing_prog, "u_aspect"), (float)src_w / (float)src_h);
 
     for (int i = 0; i < num_lights; i++)
     {
@@ -495,8 +549,8 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     {
         glUseProgram(s_blur_prog);
         glUniform1f(glGetUniformLocation(s_blur_prog, "u_flip_y"), 1.0f);
-        int bw = std::max(1, src_w / 2);
-        int bh = std::max(1, src_h / 2);
+        int bw = std::max(1, s_fbo_w / 2);
+        int bh = std::max(1, s_fbo_h / 2);
         glViewport(0, 0, bw, bh);
 
         // Horizontal blur

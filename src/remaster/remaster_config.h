@@ -3,9 +3,17 @@
 
 #include <string>
 
+enum RenderMode {
+    RENDER_MODE_CLASSIC_1995 = 0,
+    RENDER_MODE_CLASSIC_RT   = 1,
+    RENDER_MODE_HD_PBR_RT    = 2
+};
+
 struct RemasterConfig
 {
-    bool enabled = true;             // F11 master toggle
+    int render_mode = RENDER_MODE_HD_PBR_RT; // 0: Classic 1995, 1: Classic+RT, 2: HD PBR (PS5)
+    bool enabled = true;             // Master RT/pipeline toggle
+    bool hd_textures = true;         // Next-Gen 4-Channel HD PBR Textures
     bool raytracing = true;          // 2D raymarched shadows
     bool soft_shadows = true;        // Penumbra filtering
     bool normal_mapping = true;      // Relieve/normal map lighting
@@ -40,11 +48,46 @@ struct RemasterConfig
         notification_timer = duration;
     }
 
+    void apply_render_mode()
+    {
+        if (render_mode == RENDER_MODE_CLASSIC_1995)
+        {
+            enabled = false;
+            hd_textures = false;
+            show_notification("RENDER MODE: ORIGINAL 1995 RETRO (VGA 320x200 / 70Hz)");
+        }
+        else if (render_mode == RENDER_MODE_CLASSIC_RT)
+        {
+            enabled = true;
+            hd_textures = false;
+            show_notification("RENDER MODE: CLASSIC 16px RETRO + 2D RAY TRACING & SSR");
+        }
+        else
+        {
+            enabled = true;
+            hd_textures = true;
+            show_notification("RENDER MODE: NEXT-GEN xBR HD REMASTER (1920x1200 / 4K SHARP)");
+        }
+    }
+
+    void cycle_render_mode()
+    {
+        render_mode = (render_mode + 1) % 3;
+        apply_render_mode();
+    }
+
+    void toggle_hd()
+    {
+        if (render_mode == RENDER_MODE_HD_PBR_RT)
+            render_mode = RENDER_MODE_CLASSIC_RT;
+        else
+            render_mode = RENDER_MODE_HD_PBR_RT;
+        apply_render_mode();
+    }
+
     void toggle_remaster()
     {
-        enabled = !enabled;
-        show_notification(enabled ? "REMASTER MODE: ACTIVATED (RT, Normals, Bloom, 120Hz+)"
-                                  : "CLASSIC 1995 MODE: ACTIVATED (Original Software Renderer)");
+        cycle_render_mode();
     }
 
     void toggle_hud()

@@ -2,6 +2,7 @@
 #include "remaster_config.h"
 #include "remaster_lighting.h"
 #include "remaster_gl.h"
+#include "remaster_hd.h"
 #include "remaster_shaders.h"
 #include "common.h"
 #include "image.h"
@@ -287,7 +288,14 @@ void RemasterHUD::draw_dashboard()
         cur_y += 17;
     };
 
-    draw_row("[F11] Remaster Mode:", cfg.enabled, "Master GPU Pipeline");
+    const char *mode_str = "NEXT-GEN xBR HD (1920x1200 / 4K)";
+    if (cfg.render_mode == RENDER_MODE_CLASSIC_1995) mode_str = "ORIGINAL 1995 RETRO (VGA)";
+    else if (cfg.render_mode == RENDER_MODE_CLASSIC_RT) mode_str = "CLASSIC 16px RETRO + 2D RT";
+
+    draw_row("[F11] Render Mode:", cfg.enabled, mode_str);
+
+    draw_row("[F10] Next-Gen xBR HD:", cfg.hd_textures, "Edge-Directed 6x Subpixel Filter");
+
     draw_row("2D Ray Tracing & Shadows:", cfg.raytracing, "32 Steps Soft Penumbra");
     draw_row("Volumetric Atmospheric Fog:", cfg.volumetric_fog, "Light Shaft Scattering");
     draw_row("Procedural Normal Mapping:", cfg.normal_mapping, "Sobel 3D Relief");
@@ -304,7 +312,7 @@ void RemasterHUD::draw_dashboard()
     // Footer
     cur_y = panel_y + panel_h - 32;
     fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, panel_x + 1, cur_y, panel_w - 2, 31, make_rgba(4, 8, 16, 220));
-    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, panel_x + 16, cur_y + 9, "CONTROLS: [F8] Gamma  |  [F11] Remaster  |  [F12] Close", text_cyan, 1, false);
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, panel_x + 16, cur_y + 9, "CONTROLS: [F8] Gamma  |  [F10] HD PBR  |  [F11] Cycle Modes  |  [F12] Close", text_cyan, 1, false);
 }
 
 void RemasterHUD::draw_cursor(int dst_x0, int dst_y0, int dst_w, int dst_h, void *im_ptr, void *pal_ptr)

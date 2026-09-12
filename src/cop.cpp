@@ -13,6 +13,8 @@
 #endif
 
 #include "common.h"
+#include <cmath>
+#include "remaster/remaster_config.h"
 
 #include "lisp.h"
 #include "lisp_gc.h"
@@ -215,6 +217,20 @@ static int player_fire_weapon(game_object *o, int type, game_object *target, int
 
   int firex=other->x+fire_off[o->current_frame*2];
   int firey=other->y-fire_off[o->current_frame*2+1];
+
+  if (RemasterConfig::get().enabled)
+  {
+    int iy = fire_off[1];
+    int ix = fire_off[6 * 2];
+    int shoulder_x = other->x + ix;
+    int shoulder_y = other->y - iy;
+    float vx = (float)(fire_off[o->current_frame * 2] - ix);
+    float vy = (float)(fire_off[o->current_frame * 2 + 1] - iy);
+    float R = std::hypot(vx, vy);
+    float rad = (float)angle * 3.141592653589793f / 180.0f;
+    firex = shoulder_x + (int)std::round(R * std::cos(rad));
+    firey = shoulder_y - (int)std::round(R * std::sin(rad));
+  }
 
 
 
@@ -765,21 +781,213 @@ void *top_draw()
         o->x+=4;
       o->y=bot->y+29-bot->picture()->Size().y;
 
-      void *ret=NULL;
-      PtrRef r1(ret);
+      view *v = bot->controller();
+      bool use_smooth_draw = (v != nullptr && RemasterConfig::get().enabled &&
+                              bot->lvars[special_power] != SNEAKY_POWER);
 
-      push_onto_list(LNumber::Create(bot->get_tint()),ret);
-
-      if (bot->lvars[special_power]==SNEAKY_POWER)
+      if (use_smooth_draw)
       {
-    if (bot->lvars[used_special_power]==0)
-      player_draw(top_just_fired,bot->get_tint());
-    else if (bot->lvars[used_special_power]<15)
-      o->draw_trans(bot->lvars[used_special_power],16);
-    else
-      o->draw_predator();
-      } else
-        ((LSymbol *)l_player_draw)->EvalFunction(ret);
+        signed char *fire_off = (o->otype == S_DFRIS_TOP || o->otype == S_ROCKET_TOP || o->otype == S_BFG_TOP)
+                                    ? large_fire_off
+                                    : small_fire_off;
+        int iy = fire_off[1];
+        int ix = fire_off[6 * 2];
+
+        int shoulder_world_x = o->x + ix;
+        int shoulder_world_y = bot->y - iy;
+
+        float dx = (float)(v->pointer_x - shoulder_world_x);
+        float dy = (float)(shoulder_world_y - v->pointer_y); // dy > 0 is up
+        float len = std::hypot(dx, dy);
+
+        float aim_deg = 0.0f;
+        if (len > 0.001f)
+        {
+          aim_deg = std::atan2(dy, dx) * 180.0f / 3.141592653589793f;
+          if (aim_deg < 0.0f) aim_deg += 360.0f;
+        }
+        else
+        {
+          aim_deg = (bot->direction < 0) ? 180.0f : 0.0f;
+        }
+
+        // Find nearest base frame among 24 frames
+        int best_frame = 0;
+        float best_diff = 360.0f;
+        float best_base_deg = 0.0f;
+
+        for (int i = 0; i < 24; i++)
+        {
+          float vx = (float)(fire_off[i * 2] - ix);
+          float vy = (float)(fire_off[i * 2 + 1] - iy);
+          float b_deg = std::atan2(vy, vx) * 180.0f / 3.141592653589793f;
+          if (b_deg < 0.0f) b_deg += 360.0f;
+
+          float diff = std::abs(aim_deg - b_deg);
+          if (diff > 180.0f) diff = 360.0f - diff;
+
+          if (diff < best_diff)
+          {
+            best_diff = diff;
+            best_frame = i;
+            best_base_deg = b_deg;
+          }
+        }
+
+        o->current_frame = best_frame;
+
+        float delta_deg = aim_deg - best_base_deg;
+        if (delta_deg > 180.0f) delta_deg -= 360.0f;
+        if (delta_deg < -180.0f) delta_deg += 360.0f;
+
+        uint8_t *tint_map = nullptr;
+        uint8_t *tint_map2 = nullptr;
+        int tint_num = bot->get_tint();
+        if (tint_num == 0)
+        {
+          if (o->lvars[top_just_fired])
+          {
+            tint_map = cache.ctint(S_bright_tint)->data;
+            o->lvars[top_just_fired] = 0;
+          }
+        }
+        else
+        {
+          int t_id = lnumber_value(((LArray *)((LSymbol *)l_player_tints)->GetValue())->Get(tint_num));
+          tint_map = cache.ctint(t_id)->data;
+          if (o->lvars[top_just_fired])
+          {
+            tint_map2 = cache.ctint(S_bright_tint)->data;
+            o->lvars[top_just_fired] = 0;
+          }
+        }
+
+        TransImage *cpict = o->picture();
+        int spr_w = cpict->Size().x;
+        int spr_h = cpict->Size().y;
+
+        ivec2 dest_pos((o->direction < 0 ? o->x - (spr_w - o->x_center() - 1) : o->x - o->x_center()) - current_vxadd,
+                       o->y - spr_h + 1 - current_vyadd);
+
+        if (std::abs(delta_deg) < 0.25f)
+        {
+          if (tint_map2 && tint_map)
+            cpict->PutDoubleRemap(main_screen, dest_pos, tint_map, tint_map2);
+          else if (tint_map)
+            cpict->PutRemap(main_screen, dest_pos, tint_map);
+          else
+            cpict->PutImage(main_screen, dest_pos);
+        }
+        else
+        {
+          // Continuous smooth rotation around shoulder pivot
+          float rot_rad = -delta_deg * (3.141592653589793f / 180.0f);
+          float cos_a = std::cos(rot_rad);
+          float sin_a = std::sin(rot_rad);
+
+          int pvt_screen_x = shoulder_world_x - current_vxadd;
+          int pvt_screen_y = shoulder_world_y - current_vyadd;
+
+          uint8_t src_pixels[64 * 64];
+          memset(src_pixels, 0, sizeof(src_pixels));
+          uint8_t *p = cpict->Data();
+          for (int py = 0; py < spr_h; py++)
+          {
+            for (int px = 0; px < spr_w; )
+            {
+              int skip = *p++;
+              px += skip;
+              if (px >= spr_w) break;
+              int run = *p++;
+              for (int r = 0; r < run; r++, px++)
+              {
+                src_pixels[py * 64 + px] = *p++;
+              }
+            }
+          }
+
+          // Calculate rotated bounding box from unrotated corners
+          float corners_x[4] = { (float)dest_pos.x, (float)(dest_pos.x + spr_w), (float)dest_pos.x, (float)(dest_pos.x + spr_w) };
+          float corners_y[4] = { (float)dest_pos.y, (float)dest_pos.y, (float)(dest_pos.y + spr_h), (float)(dest_pos.y + spr_h) };
+
+          float min_rx = 1e9f, max_rx = -1e9f, min_ry = 1e9f, max_ry = -1e9f;
+          for (int c = 0; c < 4; c++)
+          {
+            float rel_x = corners_x[c] - (float)pvt_screen_x;
+            float rel_y = corners_y[c] - (float)pvt_screen_y;
+            float rx = (float)pvt_screen_x + cos_a * rel_x - sin_a * rel_y;
+            float ry = (float)pvt_screen_y + sin_a * rel_x + cos_a * rel_y;
+            if (rx < min_rx) min_rx = rx;
+            if (rx > max_rx) max_rx = rx;
+            if (ry < min_ry) min_ry = ry;
+            if (ry > max_ry) max_ry = ry;
+          }
+
+          int min_dst_x = (int)std::floor(min_rx) - 1;
+          int max_dst_x = (int)std::ceil(max_rx) + 1;
+          int min_dst_y = (int)std::floor(min_ry) - 1;
+          int max_dst_y = (int)std::ceil(max_ry) + 1;
+
+          ivec2 clip_aa, clip_bb;
+          main_screen->GetClip(clip_aa, clip_bb);
+          min_dst_x = std::max(min_dst_x, clip_aa.x);
+          max_dst_x = std::min(max_dst_x, clip_bb.x - 1);
+          min_dst_y = std::max(min_dst_y, clip_aa.y);
+          max_dst_y = std::min(max_dst_y, clip_bb.y - 1);
+
+          if (min_dst_x <= max_dst_x && min_dst_y <= max_dst_y)
+          {
+            main_screen->Lock();
+            for (int dy = min_dst_y; dy <= max_dst_y; dy++)
+            {
+              float ry = (float)(dy - pvt_screen_y);
+              uint8_t *dst_row = main_screen->scan_line(dy);
+              for (int dx = min_dst_x; dx <= max_dst_x; dx++)
+              {
+                float rx = (float)(dx - pvt_screen_x);
+
+                // Inverse rotation
+                float unrot_rx =  cos_a * rx + sin_a * ry;
+                float unrot_ry = -sin_a * rx + cos_a * ry;
+
+                int sx = (int)std::round((float)pvt_screen_x + unrot_rx) - dest_pos.x;
+                int sy = (int)std::round((float)pvt_screen_y + unrot_ry) - dest_pos.y;
+
+                if (sx >= 0 && sx < spr_w && sy >= 0 && sy < spr_h)
+                {
+                  uint8_t col = src_pixels[sy * 64 + sx];
+                  if (col != 0)
+                  {
+                    if (tint_map) col = tint_map[col];
+                    if (tint_map2) col = tint_map2[col];
+                    dst_row[dx] = col;
+                  }
+                }
+              }
+            }
+            main_screen->Unlock();
+            main_screen->AddDirty(ivec2(min_dst_x, min_dst_y), ivec2(max_dst_x + 1, max_dst_y + 1));
+          }
+        }
+      }
+      else
+      {
+        void *ret=NULL;
+        PtrRef r1(ret);
+
+        push_onto_list(LNumber::Create(bot->get_tint()),ret);
+
+        if (bot->lvars[special_power]==SNEAKY_POWER)
+        {
+          if (bot->lvars[used_special_power]==0)
+            player_draw(top_just_fired,bot->get_tint());
+          else if (bot->lvars[used_special_power]<15)
+            o->draw_trans(bot->lvars[used_special_power],16);
+          else
+            o->draw_predator();
+        } else
+          ((LSymbol *)l_player_draw)->EvalFunction(ret);
+      }
 
       o->y=oldy;
       if (bot->direction<0)
@@ -1128,15 +1336,39 @@ bool get_player_muzzle_pos(view *v, int &muzzle_x, int &muzzle_y, float &dir_x, 
   if (bot->direction < 0)
     bx += 4;
 
-  muzzle_x = bx + fire_off[top->current_frame * 2];
-  muzzle_y = bot->y - fire_off[top->current_frame * 2 + 1];
+  int iy = fire_off[1];
+  int ix = fire_off[6 * 2];
+  int shoulder_x = bx + ix;
+  int shoulder_y = bot->y - iy;
 
-  // True weapon aim angle from Abuse top character (0..359 degrees)
-  // Abuse angle 0 = right, 90 = up, 180 = left, 270 = down
-  int angle = top->lvars[point_angle];
-  float rad = (float)angle * 3.141592653589793f / 180.0f;
-  dir_x = std::cos(rad);
-  dir_y = -std::sin(rad); // In screen coordinates, +Y is downwards
+  float dx = (float)(v->pointer_x - shoulder_x);
+  float dy = (float)(shoulder_y - v->pointer_y); // dy > 0 is up
+  float len = std::hypot(dx, dy);
+
+  float aim_rad = 0.0f;
+  if (len > 0.001f)
+  {
+    aim_rad = std::atan2(dy, dx);
+    dir_x = dx / len;
+    dir_y = -dy / len; // In screen coordinates, +Y is downwards
+  }
+  else
+  {
+    dir_x = (bot->direction < 0) ? -1.0f : 1.0f;
+    dir_y = 0.0f;
+    aim_rad = (bot->direction < 0) ? 3.141592653589793f : 0.0f;
+  }
+
+  // Exact distance from shoulder pivot to barrel tip for the active weapon frame
+  float vx = (float)(fire_off[top->current_frame * 2] - ix);
+  float vy = (float)(fire_off[top->current_frame * 2 + 1] - iy);
+  float R = std::hypot(vx, vy);
+
+  // Calibrate R to physical visual barrel tip (small_fire_off had a ~4.5px collision buffer in 1995)
+  float R_visual = std::max(6.0f, R - 4.5f);
+
+  muzzle_x = shoulder_x + (int)std::round(R_visual * std::cos(aim_rad));
+  muzzle_y = shoulder_y - (int)std::round(R_visual * std::sin(aim_rad));
 
   return true;
 }

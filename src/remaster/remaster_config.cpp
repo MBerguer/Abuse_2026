@@ -23,13 +23,14 @@ void RemasterConfig::load()
                 std::string val;
                 if (std::getline(iss, val))
                 {
-                    // trim
                     key.erase(0, key.find_first_not_of(" \t\r\n"));
                     key.erase(key.find_last_not_of(" \t\r\n") + 1);
                     val.erase(0, val.find_first_not_of(" \t\r\n"));
                     val.erase(val.find_last_not_of(" \t\r\n") + 1);
 
-                    if (key == "enabled") enabled = (val == "1" || val == "true");
+                    if (key == "render_mode") render_mode = std::stoi(val);
+                    else if (key == "hd_textures") hd_textures = (val == "1" || val == "true");
+                    else if (key == "enabled") enabled = (val == "1" || val == "true");
                     else if (key == "raytracing") raytracing = (val == "1" || val == "true");
                     else if (key == "soft_shadows") soft_shadows = (val == "1" || val == "true");
                     else if (key == "normal_mapping") normal_mapping = (val == "1" || val == "true");
@@ -50,10 +51,19 @@ void RemasterConfig::load()
         }
     }
 
-    if (getenv("ABUSE_NO_REMASTER"))
-        enabled = false;
+    if (const char *rm = getenv("ABUSE_RENDER_MODE"))
+        render_mode = std::clamp(std::atoi(rm), 0, 2);
+    else if (getenv("ABUSE_NO_REMASTER"))
+        render_mode = RENDER_MODE_CLASSIC_1995;
+    else if (getenv("ABUSE_NO_HD"))
+        render_mode = RENDER_MODE_CLASSIC_RT;
+
     if (getenv("ABUSE_NO_RT"))
         raytracing = false;
+    if (getenv("ABUSE_SHOW_HUD"))
+        show_hud_overlay = true;
+
+    apply_render_mode();
 }
 
 void RemasterConfig::save()
@@ -64,6 +74,8 @@ void RemasterConfig::save()
         return;
 
     file << "; Abuse 2026 Remaster Configuration\n";
+    file << "render_mode = " << render_mode << "\n";
+    file << "hd_textures = " << (hd_textures ? 1 : 0) << "\n";
     file << "enabled = " << (enabled ? 1 : 0) << "\n";
     file << "raytracing = " << (raytracing ? 1 : 0) << "\n";
     file << "soft_shadows = " << (soft_shadows ? 1 : 0) << "\n";
