@@ -796,8 +796,18 @@ void *top_draw()
         int shoulder_world_x = o->x + ix;
         int shoulder_world_y = bot->y - iy;
 
-        float dx = (float)(v->pointer_x - shoulder_world_x);
-        float dy = (float)(shoulder_world_y - v->pointer_y); // dy > 0 is up
+        int target_x = v->pointer_x;
+        int target_y = v->pointer_y;
+        if (target_x == 0 && target_y == 0 && wm && the_game)
+        {
+          ivec2 mp = wm->GetMousePos();
+          ivec2 mg = the_game->MouseToGame(mp, v);
+          target_x = mg.x;
+          target_y = mg.y;
+        }
+
+        float dx = (float)(target_x - shoulder_world_x);
+        float dy = (float)(shoulder_world_y - target_y); // dy > 0 is up
         float len = std::hypot(dx, dy);
 
         float aim_deg = 0.0f;
@@ -1341,8 +1351,18 @@ bool get_player_muzzle_pos(view *v, int &muzzle_x, int &muzzle_y, float &dir_x, 
   int shoulder_x = bx + ix;
   int shoulder_y = bot->y - iy;
 
-  float dx = (float)(v->pointer_x - shoulder_x);
-  float dy = (float)(shoulder_y - v->pointer_y); // dy > 0 is up
+  int target_x = v->pointer_x;
+  int target_y = v->pointer_y;
+  if (target_x == 0 && target_y == 0 && wm && the_game)
+  {
+    ivec2 mp = wm->GetMousePos();
+    ivec2 mg = the_game->MouseToGame(mp, v);
+    target_x = mg.x;
+    target_y = mg.y;
+  }
+
+  float dx = (float)(target_x - shoulder_x);
+  float dy = (float)(shoulder_y - target_y); // dy > 0 is up
   float len = std::hypot(dx, dy);
 
   float aim_rad = 0.0f;
@@ -1364,8 +1384,8 @@ bool get_player_muzzle_pos(view *v, int &muzzle_x, int &muzzle_y, float &dir_x, 
   float vy = (float)(fire_off[top->current_frame * 2 + 1] - iy);
   float R = std::hypot(vx, vy);
 
-  // Calibrate R to physical visual barrel tip (small_fire_off had a ~4.5px collision buffer in 1995)
-  float R_visual = std::max(6.0f, R - 4.5f);
+  // Calibrate R to physical visual barrel tip (fire_off had collision buffer in 1995)
+  float R_visual = std::max(4.0f, R - 8.0f);
 
   muzzle_x = shoulder_x + (int)std::round(R_visual * std::cos(aim_rad));
   muzzle_y = shoulder_y - (int)std::round(R_visual * std::sin(aim_rad));

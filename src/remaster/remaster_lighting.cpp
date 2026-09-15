@@ -122,18 +122,18 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
         add_point_light(px, py, 0.06f, 1.0f, 0.98f, 0.95f, 0.08f, 0.30f);
 
         // 2b. Tactical Weapon-Mounted Directional Flashlight (starts directly at muzzle tip, pointing outward)
-        float spot_intensity = player_firing ? 3.0f : 2.5f;
-        float spot_radius = player_firing ? 0.72f : 0.65f;
-        float spot_cutoff = 0.72f; // ~45 degree tactical beam cone
+        float spot_intensity = player_firing ? 2.8f : 2.4f;
+        float spot_radius = player_firing ? 0.90f : 0.85f;
+        float spot_cutoff = 0.78f; // ~38.7 degree tactical cone (half-angle), matching user capture
         add_spot_light(mx, my, 0.05f,
                        1.0f, 0.98f, 0.94f,
                        spot_radius, spot_intensity,
                        dx, dy, spot_cutoff);
 
-        // Flashlight lens emitter core: brilliant tactical core right on the weapon muzzle tip
+        // Flashlight lens emitter core: subtle tactical diode right on the weapon muzzle tip
         add_point_light(mx, my, 0.025f,
                         1.0f, 0.98f, 0.95f,
-                        0.04f, 1.8f);
+                        0.035f, 1.1f);
 
         // 2c. Dynamic muzzle flash burst when firing (anchored right at muzzle tip)
         if (player_firing)

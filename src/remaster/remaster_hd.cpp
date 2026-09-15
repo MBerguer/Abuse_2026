@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <set>
 
 RemasterHD::RemasterHD()
     : m_ready(false),
@@ -25,7 +26,7 @@ RemasterHD::RemasterHD()
       m_grid_w(0), m_grid_h(0)
 {
     std::memset(m_tile_presence, 0, sizeof(m_tile_presence));
-    m_grid_buffer.resize(64 * 64, 0);
+    m_grid_buffer.resize(64 * 64 * 4, 0);
 }
 
 RemasterHD::~RemasterHD()
@@ -155,10 +156,10 @@ bool RemasterHD::load_binary_pack(const std::string &path)
     glBindTexture(GL_TEXTURE_2D_ARRAY, m_emission_array);
     glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
 
-    // Create 64x64 Tile Grid Texture (GL_R16I)
+    // Create 64x64 Tile Grid Texture (GL_RGBA16I)
     glGenTextures(1, &m_tile_grid_tex);
     glBindTexture(GL_TEXTURE_2D, m_tile_grid_tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16I, 64, 64, 0, GL_RED_INTEGER, GL_SHORT, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16I, 64, 64, 0, GL_RGBA_INTEGER, GL_SHORT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -217,8 +218,8 @@ void RemasterHD::update_frame_data(int cam_x, int cam_y, int view_w, int view_h,
     m_cam_y = static_cast<float>(cam_y);
     m_view_w = static_cast<float>(view_w);
     m_view_h = static_cast<float>(view_h);
-    m_tile_w = static_cast<float>(ftile_w > 0 ? ftile_w : 30);
-    m_tile_h = static_cast<float>(ftile_h > 0 ? ftile_h : 15);
+    m_tile_w = static_cast<float>(ftile_w > 0 ? ftile_w : (f_wid > 0 ? f_wid : 16));
+    m_tile_h = static_cast<float>(ftile_h > 0 ? ftile_h : (f_hi > 0 ? f_hi : 16));
 
     if (!m_ready || !current_level) return;
 
@@ -235,32 +236,126 @@ void RemasterHD::update_frame_data(int cam_x, int cam_y, int view_w, int view_h,
     m_grid_w = std::clamp(x2 - x1 + 1, 1, 64);
     m_grid_h = std::clamp(y2 - y1 + 1, 1, 64);
 
-    if (m_grid_buffer.size() < static_cast<size_t>(m_grid_w * m_grid_h))
-        m_grid_buffer.resize(m_grid_w * m_grid_h);
+    if (m_grid_buffer.size() < static_cast<size_t>(m_grid_w * m_grid_h * 4))
+        m_grid_buffer.resize(m_grid_w * m_grid_h * 4);
 
     for (int gy = 0; gy < m_grid_h; gy++)
     {
         int map_y = y1 + gy;
-        uint16_t *line = (map_y >= 0 && map_y < fg_h) ? lev->get_fgline(map_y) : nullptr;
+        uint16_t *line_fg = (map_y >= 0 && map_y < lev->foreground_height()) ? lev->get_fgline(map_y) : nullptr;
+        uint16_t *line_bg = (map_y >= 0 && map_y < lev->background_height()) ? lev->get_bgline(map_y) : nullptr;
 
         for (int gx = 0; gx < m_grid_w; gx++)
         {
             int map_x = x1 + gx;
-            int tile_id = 0;
+            int tile_id_fg = 0;
+            int tile_id_bg = 0;
+            int sem_type = 0;
+            int floor_y = 0;
 
-            if (line && map_x >= 0 && map_x < fg_w)
+            if (line_fg && map_x >= 0 && map_x < lev->foreground_width())
             {
-                uint16_t raw_code = *(line + map_x);
-                tile_id = fgvalue(raw_code);
+                uint16_t raw_code = *(line_fg + map_x);
+                tile_id_fg = fgvalue(raw_code);
+            }
+            if (line_bg && map_x >= 0 && map_x < lev->background_width())
+            {
+                uint16_t raw_code = *(line_bg + map_x);
+                tile_id_bg = bgvalue(raw_code);
             }
 
-            m_grid_buffer[gy * m_grid_w + gx] = static_cast<int16_t>(tile_id);
+            // Semantic Classification:
+            // 0 = Deep inaccessible background / outer abyss (AZUL)
+            // 1 = Room interior alcove wall / perforated grille mesh (ROJO)
+            // 2 = Solid vertical pillar / structural column (VERDE)
+            // 3 = Walkable flat floor / catwalk platform (VERDE)
+            // 4 = Walkable ramp slope down-right (VERDE)
+            // 5 = Walkable ramp slope down-left (VERDE)
+            // 6 = Solid foundation / undercarriage
+            if (tile_id_fg == 18)
+            {
+                sem_type = 4; // Ramp slope down-right
+                floor_y = 0;
+            }
+            else if (tile_id_fg == 19)
+            {
+                sem_type = 5; // Ramp slope down-left
+                floor_y = 0;
+            }
+            else if (tile_id_fg >= 82 && tile_id_fg <= 84)
+            {
+                sem_type = 3; // Catwalk platform
+                floor_y = 2;   // Collision walking surface at y = 2
+            }
+            else if (tile_id_fg == 10 || tile_id_fg == 11 || tile_id_fg == 12)
+            {
+                sem_type = 2; // Vertical framing pillar & column base
+            }
+            else if (tile_id_fg == 388 || tile_id_fg == 394 || tile_id_fg == 412)
+            {
+                sem_type = 1; // Interior room perforated mesh wall (ROJO)
+            }
+            else if (tile_id_fg == 23 || tile_id_fg == 88 || tile_id_fg == 89)
+            {
+                sem_type = 6; // Under-ramp structural truss / foundation
+            }
+            else if (the_game && tile_id_fg > 0)
+            {
+                foretile *f = the_game->get_fg(tile_id_fg);
+                if (f)
+                {
+                    if (f->points && f->points->tot == 4)
+                    {
+                        sem_type = 4;
+                    }
+                    else if (f->points && f->points->tot > 0)
+                    {
+                        if (f->ylevel < 15 && f->ylevel > 0)
+                        {
+                            sem_type = 3; // Flat floor
+                            floor_y = f->ylevel;
+                        }
+                        else
+                        {
+                            sem_type = 2; // Solid wall/column
+                        }
+                    }
+                    else
+                    {
+                        sem_type = 1; // Decorative mesh
+                    }
+                }
+            }
+            else
+            {
+                sem_type = 0; // Deep background / void (AZUL)
+            }
+
+            size_t idx = (gy * m_grid_w + gx) * 4;
+            m_grid_buffer[idx + 0] = static_cast<int16_t>(tile_id_fg);
+            m_grid_buffer[idx + 1] = static_cast<int16_t>(tile_id_bg);
+            m_grid_buffer[idx + 2] = static_cast<int16_t>(sem_type);
+            m_grid_buffer[idx + 3] = static_cast<int16_t>(floor_y);
         }
     }
 
     // Upload to OpenGL tile grid texture
+    static bool s_printed = false;
+    if (!s_printed && getenv("ABUSE_DUMP_FRAME") && the_game) {
+        s_printed = true;
+        for (int tid : {10, 11, 12, 18, 19, 23, 82, 83, 84}) {
+            foretile *f = the_game->get_fg(tid);
+            if (f && f->points) {
+                printf("Tile %d (tot=%d): ", tid, f->points->tot);
+                for (int i = 0; i < f->points->tot; i++) {
+                    printf("(%d,%d) ", (int)f->points->data[i*2], (int)f->points->data[i*2+1]);
+                }
+                printf("\n");
+            }
+        }
+    }
     glBindTexture(GL_TEXTURE_2D, m_tile_grid_tex);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_grid_w, m_grid_h, GL_RED_INTEGER, GL_SHORT, m_grid_buffer.data());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_grid_w, m_grid_h, GL_RGBA_INTEGER, GL_SHORT, m_grid_buffer.data());
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 

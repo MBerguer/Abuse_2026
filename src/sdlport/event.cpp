@@ -338,12 +338,12 @@ void EventHandler::SysEvent(Event &ev)
 			ev.key = JK_F7;
 			break;
 
-		case SDLK_F8: // Open Gamma / Brightness Calibration Popup
+		case SDLK_F8: // Toggle Player Position & Tile Debug Overlay
 			if(ev.type == EV_KEYRELEASE)
 			{
-				gamma_correct(pal, 1);
+				RemasterConfig::get().toggle_pos_debug();
 				if (the_game)
-					the_game->show_help("Gamma / Brightness Calibration Updated");
+					the_game->show_help(RemasterConfig::get().notification_text.c_str());
 			}
 			ev.key = JK_F8;
 			break;

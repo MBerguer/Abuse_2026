@@ -31,6 +31,7 @@ private:
     void update_canvas(int w, int h);
     void draw_notification(float alpha);
     void draw_dashboard();
+    void draw_pos_debug();
     void draw_cursor(int dst_x0, int dst_y0, int dst_w, int dst_h, void *im_ptr, void *pal_ptr);
 
     GLuint m_texture = 0;

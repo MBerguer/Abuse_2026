@@ -512,9 +512,18 @@ void update_window_done()
             ivec2 aim_screen = the_game ? the_game->GameToMouse(ivec2(aim_world_x, aim_world_y), player_list)
                                         : ivec2(aim_world_x - player_list->xoff(), aim_world_y - player_list->yoff());
 
-            if (aim_world_x == 0 && aim_world_y == 0)
+            if (aim_world_x == 0 && aim_world_y == 0 && wm)
             {
-                aim_screen = ivec2(m_screen.x + 120, m_screen.y);
+                aim_screen = wm->GetMousePos();
+            }
+
+            float m_dx = (float)(aim_screen.x - m_screen.x);
+            float m_dy = (float)(aim_screen.y - m_screen.y);
+            float m_len = std::hypot(m_dx, m_dy);
+            if (m_len > 0.001f)
+            {
+                aim_dir_x = m_dx / m_len;
+                aim_dir_y = m_dy / m_len;
             }
 
             RemasterLighting::get().update_frame_lights(
@@ -590,9 +599,34 @@ void update_window_done()
             ui_rects.push_back(r);
         }
 
+
+        if (RemasterConfig::get().show_pos_debug && in_gameplay && player_list && player_list->m_focus)
+        {
+            extern int f_wid, f_hi;
+            int px = player_list->m_focus->x;
+            int py = player_list->m_focus->y;
+            int tw = f_wid > 0 ? f_wid : 16;
+            int th = f_hi > 0 ? f_hi : 16;
+            int tx = (px >= 0) ? (px / tw) : -1;
+            int ty = (py >= 0) ? (py / th) : -1;
+
+            if (window)
+            {
+                static int s_title_timer = 0;
+                if (s_title_timer++ % 10 == 0)
+                {
+                    char title_buf[128];
+                    snprintf(title_buf, sizeof(title_buf), "Abuse 2026 | POS: X=%d Y=%d | TILE: [%d, %d]", px, py, tx, ty);
+                    SDL_SetWindowTitle(window, title_buf);
+                }
+            }
+        }
+
         int level_amb = (in_gameplay && player_list) ? player_list->ambient : 32;
+        float cam_x = (in_gameplay && player_list) ? (float)player_list->xoff() : 0.0f;
+        float cam_y = (in_gameplay && player_list) ? (float)player_list->yoff() : 0.0f;
         RemasterGL::render_frame(screen->pixels, xres, yres, win_w, win_h, in_gameplay,
-                                 ui_rects, level_amb);
+                                 ui_rects, level_amb, cam_x, cam_y);
         SDL_GL_SwapWindow(window);
     }
     else if (renderer && texture)

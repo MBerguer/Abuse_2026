@@ -35,6 +35,7 @@ struct RemasterConfig
     std::string notification_text;
     float notification_timer = 0.0f; // in seconds
     bool show_hud_overlay = false;   // F12 toggle
+    bool show_pos_debug = true;      // F10 toggle: player position & tile info overlay
 
     static RemasterConfig &get()
     {
@@ -93,6 +94,12 @@ struct RemasterConfig
     void toggle_hud()
     {
         show_hud_overlay = !show_hud_overlay;
+    }
+
+    void toggle_pos_debug()
+    {
+        show_pos_debug = !show_pos_debug;
+        show_notification(show_pos_debug ? "POS DEBUG OVERLAY: ON" : "POS DEBUG OVERLAY: OFF", 1.5f);
     }
 
     void load();

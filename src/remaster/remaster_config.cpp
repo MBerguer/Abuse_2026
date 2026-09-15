@@ -49,6 +49,7 @@ void RemasterConfig::load()
                 }
             }
         }
+        file.close();
     }
 
     if (const char *rm = getenv("ABUSE_RENDER_MODE"))

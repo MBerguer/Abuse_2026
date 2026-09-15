@@ -71,6 +71,13 @@ uniform vec2 u_src_size;
 uniform vec2 u_fbo_size;
 uniform float u_normal_strength;
 uniform int u_hd_scaler;
+uniform sampler2DArray u_ai_materials;
+uniform int u_has_ai_materials;
+uniform vec2 u_cam_pos;
+uniform sampler2D u_sprite_mask;
+uniform isampler2D u_tile_grid;
+uniform vec4 u_grid_bounds;
+uniform vec2 u_tile_size;
 
 const int MAX_UI_RECTS = 16;
 uniform int u_num_ui_rects;
@@ -175,15 +182,19 @@ vec4 sample_xbr_hd(vec2 uv)
         return mix(ce, c_edge, blend);
     }
 
-    // Smart De-Dithering: Inside flat panels (contrast < 0.10), gently blend local dither noise into solid clean material
-    if (contrast < 0.10)
-    {
-        vec4 avg_neighbor = (ce * 2.0 + cf + ch + cb + cd) / 6.0;
-        float de_dither = smoothstep(0.10, 0.01, contrast) * 0.45;
-        return mix(ce, avg_neighbor, de_dither);
-    }
+    // Smart De-Dithering & Smooth Surface Reconstruction:
+    // Completely dissolves 8-bit checkerboard dither patterns and pixel blockiness into clean, smooth sci-fi materials
+    float wf = exp(-xbr_df(ce, cf) * 8.0);
+    float wh = exp(-xbr_df(ce, ch) * 8.0);
+    float wb = exp(-xbr_df(ce, cb) * 8.0);
+    float wd = exp(-xbr_df(ce, cd) * 8.0);
+    vec4 bilateral = (ce * 2.0 + cf * wf + ch * wh + cb * wb + cd * wd) / (2.0 + wf + wh + wb + wd);
 
-    return ce;
+    // Hermite sub-pixel smoothing across quadrant
+    vec2 smooth_q = q * q * (3.0 - 2.0 * q);
+    vec4 quad_lerp = mix(ce, (q.x > q.y ? cf : ch), smooth_q.x * 0.25 + smooth_q.y * 0.25);
+
+    return mix(bilateral, quad_lerp, 0.35);
 }
 
 vec4 sample_pixel(vec2 uv)
@@ -274,35 +285,305 @@ void main()
         roughness = 0.12;
     }
 
-    // High-Resolution Sci-Fi Modular Panel Detailing (active when HD scaler is ON)
-    if (u_hd_scaler == 1)
+    // Dynamic sprite vs static environment mask
+    float is_sprite = texture(u_sprite_mask, TexCoords).r;
+
+    // High-Definition AI Master Material Synthesis (active when HD Remaster is ON)
+    if (u_hd_scaler == 1 && u_has_ai_materials == 1 && is_sprite < 0.5)
+    {
+        vec2 world_pos = TexCoords * u_src_size + u_cam_pos;
+        float layer = 0.0;
+        vec2 uv_mat = fract(world_pos / 96.0);
+
+        // Fetch exact tile information from the 2D Ray Tracing Grid (4 channels)
+        vec2 tile_coord = floor(world_pos / u_tile_size);
+        vec2 grid_coord = tile_coord - u_grid_bounds.xy;
+        
+        int tile_id_fg  = 0;
+        int tile_id_bg  = 0;
+        int tile_type   = 0;
+        int floor_y_ref = 0;
+        
+        if (grid_coord.x >= 0.0 && grid_coord.x < u_grid_bounds.z &&
+            grid_coord.y >= 0.0 && grid_coord.y < u_grid_bounds.w)
+        {
+            ivec2 itex_coord = ivec2(grid_coord);
+            ivec4 tile_data = texelFetch(u_tile_grid, itex_coord, 0);
+            tile_id_fg  = tile_data.r;
+            tile_id_bg  = tile_data.g;
+            tile_type   = tile_data.b;
+            floor_y_ref = tile_data.a;
+        }
+
+        vec2 tile_local = mod(world_pos, u_tile_size);
+
+        // Sub-tile surface distance & edge determination
+        float is_floor_edge = 0.0;
+        float is_floor_crease = 0.0;
+        float is_in_ramp_tread = 0.0;
+
+        // Tile 84 right cutoff (catwalk ends and pillar begins)
+        if (tile_id_fg == 84 && tile_local.x > 6.0)
+        {
+            tile_type = 2; // Right vertical pillar
+        }
+
+        if (tile_type == 4)
+        {
+            // Walkable 45-degree slope (Ramp down-right, tile 18)
+            float ramp_y = tile_local.x * (14.0 / 29.0);
+            float dist = tile_local.y - ramp_y;
+            if (dist < -0.8)
+            {
+                // Above ramp: air in alcove, showing room mesh wall behind
+                layer = 2.0;
+                uv_mat = fract(world_pos / 48.0);
+            }
+            else
+            {
+                // Ramp body
+                layer = 3.0; // Diamond tread catwalk
+                uv_mat = fract(world_pos / 48.0);
+                
+                // Physical crisp dividing line along the slope:
+                float edge_dist = abs(dist);
+                if (edge_dist <= 1.1)
+                {
+                    is_floor_edge = 1.0 - (edge_dist / 1.1);
+                }
+                else if (dist > 1.1 && dist <= 2.4)
+                {
+                    is_floor_crease = 1.0 - abs(dist - 1.75) / 0.65;
+                }
+                else if (dist > 2.4)
+                {
+                    is_in_ramp_tread = 1.0;
+                }
+            }
+        }
+        else if (tile_type == 5)
+        {
+            // Walkable slope down-left (tile 19)
+            float ramp_y = (29.0 - tile_local.x) * (14.0 / 29.0);
+            float dist = tile_local.y - ramp_y;
+            if (dist < -0.8)
+            {
+                layer = 2.0;
+                uv_mat = fract(world_pos / 48.0);
+            }
+            else
+            {
+                layer = 3.0;
+                uv_mat = fract(world_pos / 48.0);
+                float edge_dist = abs(dist);
+                if (edge_dist <= 1.1)
+                {
+                    is_floor_edge = 1.0 - (edge_dist / 1.1);
+                }
+                else if (dist > 1.1 && dist <= 2.4)
+                {
+                    is_floor_crease = 1.0 - abs(dist - 1.75) / 0.65;
+                }
+                else if (dist > 2.4)
+                {
+                    is_in_ramp_tread = 1.0;
+                }
+            }
+        }
+        else if (tile_type == 3)
+        {
+            // Walkable flat catwalk platform (tiles 82, 83, 84)
+            float plat_y = float(floor_y_ref);
+            float dist = tile_local.y - plat_y;
+            if (dist < -0.8)
+            {
+                layer = 2.0; // Air above catwalk: alcove mesh behind
+                uv_mat = fract(world_pos / 48.0);
+            }
+            else
+            {
+                layer = 3.0; // Catwalk plate
+                uv_mat = fract(world_pos / 48.0);
+                float edge_dist = abs(dist);
+                if (edge_dist <= 1.1)
+                {
+                    is_floor_edge = 1.0 - (edge_dist / 1.1);
+                }
+                else if (dist > 1.1 && dist <= 2.4)
+                {
+                    is_floor_crease = 1.0 - abs(dist - 1.75) / 0.65;
+                }
+            }
+        }
+        else if (tile_type == 2)
+        {
+            // Vertical framing columns / pillars (tiles 10, 11)
+            layer = 0.0;
+            uv_mat = fract(world_pos / 64.0);
+        }
+        else if (tile_type == 1)
+        {
+            // Interior room wall (ROJO) - Perforated mesh screen & warning panels
+            if (tile_id_fg == 412 || (col.g > 0.38 && col.b > 0.38 && col.r < 0.45) || (col.g > 0.45 && col.r < 0.30))
+            {
+                layer = 1.0; // Tech / warning panel
+                uv_mat = fract(world_pos / 64.0);
+            }
+            else
+            {
+                layer = 2.0; // Radiator / perforated metal mesh
+                uv_mat = fract(world_pos / 48.0);
+            }
+        }
+        else if (tile_type == 6)
+        {
+            // Under-ramp foundation / machinery chassis
+            layer = 0.0;
+            uv_mat = fract(world_pos / 64.0);
+        }
+        else
+        {
+            // Deep inaccessible background (AZUL)
+            layer = 4.0;
+            uv_mat = fract(world_pos / 128.0);
+        }
+
+        vec4 ai_samp = texture(u_ai_materials, vec3(uv_mat, layer));
+        vec3 ai_rgb = ai_samp.rgb;
+
+        // High-resolution Normal gradient from AI material
+        vec2 eps = vec2(1.5 / 1024.0);
+        float l_ai = dot(texture(u_ai_materials, vec3(uv_mat - vec2(eps.x, 0.0), layer)).rgb, vec3(0.299, 0.587, 0.114));
+        float r_ai = dot(texture(u_ai_materials, vec3(uv_mat + vec2(eps.x, 0.0), layer)).rgb, vec3(0.299, 0.587, 0.114));
+        float d_ai = dot(texture(u_ai_materials, vec3(uv_mat - vec2(0.0, eps.y), layer)).rgb, vec3(0.299, 0.587, 0.114));
+        float u_ai = dot(texture(u_ai_materials, vec3(uv_mat + vec2(0.0, eps.y), layer)).rgb, vec3(0.299, 0.587, 0.114));
+
+        dx += (l_ai - r_ai) * 2.2;
+        dy += (d_ai - u_ai) * 2.2;
+
+        if (layer == 3.0)
+        {
+            // VERDE: Walkable Floor & Ramp Surface
+            // Blend non-slip diamond catwalk tread
+            col.rgb = mix(col.rgb, col.rgb * (ai_rgb * 1.55), 0.45);
+            metallic = 0.88;
+            roughness = 0.20;
+
+            // Crisp physical floor division line (as user requested)
+            if (is_floor_edge > 0.01)
+            {
+                vec3 edge_spec = vec3(0.85, 0.90, 0.96); // Clean brushed metal chamfer rim
+                col.rgb = mix(col.rgb * 1.45 + vec3(0.12, 0.15, 0.18), edge_spec, is_floor_edge * 0.70);
+                metallic = 0.98;
+                roughness = 0.05;
+                dy -= 3.5 * is_floor_edge; // Upward facing chamfer reflection
+            }
+            else if (is_floor_crease > 0.01)
+            {
+                // Shadow crease directly under the edge lip (creates 3D physical shelf)
+                col.rgb *= (1.0 - is_floor_crease * 0.45);
+                dy += 2.5 * is_floor_crease;
+            }
+
+            // Stepped tread slats on the ramp
+            if (is_in_ramp_tread > 0.5)
+            {
+                float tread_phase = fract(world_pos.y / 3.0);
+                if (tread_phase < 0.35)
+                {
+                    col.rgb *= 1.20;
+                    metallic = 0.95;
+                    roughness = 0.14;
+                    dy -= 0.8;
+                }
+                else
+                {
+                    col.rgb *= 0.80;
+                    dy += 0.8;
+                }
+            }
+
+            // Hazard light on catwalk underside (tile 83)
+            if (tile_id_fg == 83 && tile_local.y > 10.5 && col.g > 0.30)
+            {
+                gEmission = vec4(col.rgb * 3.0, 1.0);
+            }
+        }
+        else if (layer == 2.0)
+        {
+            // ROJO: Interior Room Wall (Perforated Mesh)
+            // Sits in middle depth behind character, catching flashlight beam
+            col.rgb = mix(col.rgb * 0.88, col.rgb * (ai_rgb * 1.35), 0.45);
+            metallic = 0.65;
+            roughness = 0.38;
+
+            // Ambient occlusion shadow along pillar edges and floor base
+            vec2 step_side = vec2(2.5 / u_src_size.x, 0.0);
+            float lum_left = dot(sample_pixel(TexCoords - step_side).rgb, vec3(0.299, 0.587, 0.114));
+            float lum_right = dot(sample_pixel(TexCoords + step_side).rgb, vec3(0.299, 0.587, 0.114));
+            if (abs(lum_left - lum) > 0.15 || abs(lum_right - lum) > 0.15)
+            {
+                col.rgb *= 0.68; // Contact corner shadow
+            }
+        }
+        else if (layer == 1.0)
+        {
+            // Warning panels & screens in alcove
+            col.rgb = mix(col.rgb, ai_rgb, 0.65);
+            bool is_led = (ai_rgb.r > 0.55 && ai_rgb.g > 0.35 && ai_rgb.b < 0.20) || (ai_rgb.g > 0.50 && ai_rgb.b > 0.50);
+            if (is_led) gEmission = vec4(ai_rgb * 2.5, 1.0);
+            roughness = 0.18;
+            metallic = 0.40;
+        }
+        else if (tile_type == 2)
+        {
+            // VERDE: Solid Vertical Structural Columns (Pillars 10, 11)
+            // Strong vertical column bevels with horizontal segmented joints
+            col.rgb = mix(col.rgb, col.rgb * (ai_rgb * 1.25), 0.25);
+            metallic = 0.85;
+            roughness = 0.22;
+
+            // Bevel edges on the columns
+            if (tile_local.x < 4.0) dx += 2.0;
+            else if (tile_local.x > 26.0) dx -= 2.0;
+        }
+        else if (layer == 4.0 || tile_type == 0)
+        {
+            // AZUL: Deep Inaccessible Outer Background (Shaft / Abyss)
+            // Visual depth recession: cool atmospheric haze, lower contrast, soft specularity
+            vec3 depth_haze = vec3(0.012, 0.022, 0.038);
+            col.rgb = mix(col.rgb * 0.55, depth_haze, 0.42);
+            metallic = 0.25;
+            roughness = 0.70;
+        }
+        else
+        {
+            // Under-ramp truss / foundation
+            col.rgb = mix(col.rgb * 0.80, col.rgb * (ai_rgb * 1.30), 0.35);
+            metallic = 0.75;
+            roughness = 0.32;
+        }
+    }
+    else if (u_hd_scaler == 1 && is_sprite > 0.5)
+    {
+        // Dynamic character sprite: metallic armor and normal relief
+        metallic = 0.65;
+        roughness = 0.30;
+    }
+    else if (u_hd_scaler == 1 && metallic > 0.15)
     {
         vec2 world_pixel = TexCoords * u_fbo_size;
-        vec2 tile_uv = fract(TexCoords * u_src_size); // [0, 1] across each 16x16 tile
-        vec2 edge_dist = min(tile_uv, 1.0 - tile_uv);
-        float seam_dist = min(edge_dist.x, edge_dist.y);
-
-        // 1. Crisp Recessed Panel Seams (every 16x16 tile border)
-        float seam_ao = smoothstep(0.0, 0.07, seam_dist);
-        col.rgb *= mix(0.72, 1.0, seam_ao); // Ambient occlusion crevice groove
-
-        // 2. Beveled Edge Normals (catches rim lighting on plate borders)
-        vec2 bevel = vec2(0.0);
-        if (edge_dist.x < 0.09) bevel.x = (tile_uv.x < 0.5 ? 1.0 : -1.0) * (1.0 - edge_dist.x / 0.09);
-        if (edge_dist.y < 0.09) bevel.y = (tile_uv.y < 0.5 ? 1.0 : -1.0) * (1.0 - edge_dist.y / 0.09);
-
-        // 3. High-Frequency Brushed Cold-Rolled Steel Grain
         float hash1 = fract(sin(dot(floor(world_pixel), vec2(12.9898, 78.233))) * 43758.5453);
         float hash2 = fract(sin(dot(floor(world_pixel), vec2(93.9898, 67.345))) * 24634.6345);
-        float micro_grain = (hash1 - 0.5) * 0.045 * metallic;
+        
+        // Fine brushed metallic micro-grain
+        float micro_grain = (hash1 - 0.5) * 0.025 * metallic;
         col.rgb += vec3(micro_grain);
 
-        // 4. Micro-Normal Perturbation (anisotropic brushed steel reflection)
-        vec2 micro_n = (vec2(hash1, hash2) - 0.5) * 0.18 * metallic;
-        float brush = sin(world_pixel.y * 1.5) * 0.06 * metallic;
-
-        dx += bevel.x * 1.6 + micro_n.x;
-        dy += bevel.y * 1.6 + micro_n.y + brush;
+        // Micro-normal perturbation for subtle brushed steel anisotropic highlights
+        vec2 micro_n = (vec2(hash1, hash2) - 0.5) * 0.08 * metallic;
+        dx += micro_n.x;
+        dy += micro_n.y;
     }
 
     gAlbedo = col;
@@ -463,16 +744,24 @@ void main()
 
         // Spot light check (e.g. player weapon flashlight)
         float spot_factor = 1.0;
+        float spot_cone = 0.0;
         if (light.is_spot == 1)
         {
             if (dist_2d > 0.0001)
             {
                 vec2 to_pixel = -dir_to_light_aspect / dist_2d;
                 float angle_cos = dot(to_pixel, normalize(light.spot_dir));
-                if (angle_cos < light.spot_cutoff)
-                {
-                    spot_factor = smoothstep(light.spot_cutoff - 0.14, light.spot_cutoff, angle_cos);
-                }
+                
+                // Continuous, smooth optical degradé from center axis to perimeter
+                float t = clamp((angle_cos - light.spot_cutoff) / max(0.0001, 1.0 - light.spot_cutoff), 0.0, 1.0);
+                float smooth_t = smoothstep(0.0, 1.0, t);
+                spot_factor = pow(smooth_t, 1.35);
+                spot_cone = smooth_t;
+            }
+            else
+            {
+                spot_factor = 1.0;
+                spot_cone = 1.0;
             }
         }
 
@@ -486,7 +775,24 @@ void main()
         // Volumetric atmospheric in-scattering inside beam and light halo
         if (u_volumetric_enabled == 1 && shadow > 0.01)
         {
-            total_volumetric += light.color * light.intensity * atten * shadow * spot_factor * 0.045;
+            if (light.is_spot == 1)
+            {
+                // Cinematic volumetric beam: soft, translucent optical degradé cone matching user reference
+                float beam_dist_falloff = clamp(1.0 - (dist_2d / light.radius), 0.0, 1.0);
+                float mie = pow(spot_cone, 1.6) * pow(beam_dist_falloff, 1.4);
+
+                // Floating atmospheric micro-dust texture
+                vec2 dust_uv = TexCoords * 180.0;
+                float dust = fract(sin(dot(floor(dust_uv), vec2(12.9898, 78.233))) * 43758.5453);
+                float haze = 0.90 + 0.20 * dust;
+
+                // Translucent volumetric shaft (no blinding white wash, elegant soft degradé)
+                total_volumetric += light.color * (mie * 0.095 * haze) * shadow;
+            }
+            else
+            {
+                total_volumetric += light.color * light.intensity * atten * shadow * 0.035;
+            }
         }
 
         if (shadow <= 0.001 || spot_factor <= 0.001) continue;
@@ -509,7 +815,10 @@ void main()
     }
 
     vec3 final_color = albedo.rgb * total_diffuse + total_specular + emission + total_volumetric;
-    FragColor = vec4(final_color, albedo.a);
+
+    // Filmic Tone Mapping (rich deep blacks, high dynamic contrast like modern PS5 engines)
+    vec3 mapped = final_color / (final_color + vec3(0.55)) * 1.12;
+    FragColor = vec4(mapped, albedo.a);
 }
 )";
 

@@ -57,6 +57,7 @@ public:
     int get_grid_h() const { return m_grid_h; }
 
     const std::vector<ObjectRect> &get_object_rects() const { return m_object_rects; }
+    GLuint get_tile_grid_tex() const { return m_tile_grid_tex; }
 
 private:
     RemasterHD();

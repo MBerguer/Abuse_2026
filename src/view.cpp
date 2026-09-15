@@ -902,6 +902,18 @@ void view::reset_player()
       m_focus->y=start->y;
       dprintf("reset player position to %d %d\n",start->x,start->y);
     }
+
+    if (getenv("ABUSE_TELEPORT_X"))
+      m_focus->x = atoi(getenv("ABUSE_TELEPORT_X"));
+    else if (getenv("ABUSE_TELEPORT"))
+      m_focus->x += atoi(getenv("ABUSE_TELEPORT"));
+
+    if (getenv("ABUSE_TELEPORT_Y"))
+      m_focus->y = atoi(getenv("ABUSE_TELEPORT_Y"));
+
+    m_lastpos = ivec2(m_focus->x, m_focus->y);
+    m_lastlastpos = m_lastpos;
+
     m_focus->set_state(stopped);
     m_focus->set_tint(_tint);
     m_focus->set_team(_team);

@@ -9,6 +9,10 @@
 #include "palette.h"
 #include "jwindow.h"
 #include "event.h"
+#include "view.h"
+#include "level.h"
+#include "game.h"
+#include "loader2.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -312,7 +316,51 @@ void RemasterHUD::draw_dashboard()
     // Footer
     cur_y = panel_y + panel_h - 32;
     fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, panel_x + 1, cur_y, panel_w - 2, 31, make_rgba(4, 8, 16, 220));
-    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, panel_x + 16, cur_y + 9, "CONTROLS: [F8] Gamma  |  [F10] HD PBR  |  [F11] Cycle Modes  |  [F12] Close", text_cyan, 1, false);
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, panel_x + 16, cur_y + 9, "CONTROLS: [F8] Pos Debug  |  [F10] HD PBR  |  [F11] Cycle Modes  |  [F12] Close", text_cyan, 1, false);
+}
+
+void RemasterHUD::draw_pos_debug()
+{
+    view *v = player_list;
+    if (!v && the_game) v = the_game->first_view;
+    if (!v || !v->m_focus)
+        return;
+
+    int px = v->m_focus->x;
+    int py = v->m_focus->y;
+    int tw = f_wid > 0 ? f_wid : 16;
+    int th = f_hi > 0 ? f_hi : 16;
+    int tx = (px >= 0) ? (px / tw) : -1;
+    int ty = (py >= 0) ? (py / th) : -1;
+    int cx = v->xoff();
+    int cy = v->yoff();
+
+    uint16_t fg = 0;
+    uint16_t bg = 0;
+    if (current_level && tx >= 0 && ty >= 0)
+    {
+        fg = current_level->GetFg(ivec2(tx, ty));
+        bg = current_level->GetBg(ivec2(tx, ty));
+    }
+
+    char line1[128];
+    char line2[128];
+    snprintf(line1, sizeof(line1), "PLAYER POS:  X=%-5d  Y=%-5d  [F8: Toggle]", px, py);
+    snprintf(line2, sizeof(line2), "TILE: [%-3d, %-3d]  FG: %-3d  BG: %-3d", tx, ty, fg, bg);
+
+    int box_w = 340;
+    int box_h = 42;
+    int box_x = 16;
+    int box_y = 16;
+
+    uint32_t bg_col = make_rgba(8, 14, 24, 225);
+    uint32_t border_col = make_rgba(0, 220, 255, 240);
+    uint32_t text_col1 = make_rgba(255, 255, 255, 255);
+    uint32_t text_col2 = make_rgba(0, 230, 255, 255);
+
+    draw_frame(m_pixels.data(), m_canvas_w, m_canvas_h, box_x, box_y, box_w, box_h, bg_col, border_col);
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, box_x + 12, box_y + 7, line1, text_col1, 1, true);
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, box_x + 12, box_y + 23, line2, text_col2, 1, true);
 }
 
 void RemasterHUD::draw_cursor(int dst_x0, int dst_y0, int dst_w, int dst_h, void *im_ptr, void *pal_ptr)
@@ -369,12 +417,18 @@ void RemasterHUD::render(int window_w, int window_h, int vp_x, int vp_y, int vp_
     bool need_notification = (cfg.notification_timer > 0.0f && !cfg.notification_text.empty());
     bool need_dashboard = cfg.show_hud_overlay;
     bool need_cursor = (cfg.enabled && wm && wm->has_mouse() && wm->GetMouseVisual() != nullptr);
+    view *v = player_list;
+    if (!v && the_game) v = the_game->first_view;
+    bool need_pos_debug = cfg.show_pos_debug && (v != nullptr && v->m_focus != nullptr);
 
-    if (!need_notification && !need_dashboard && !need_cursor)
+    if (!need_notification && !need_dashboard && !need_cursor && !need_pos_debug)
         return;
 
     // Clear canvas
     std::fill(m_pixels.begin(), m_pixels.end(), 0);
+
+    if (need_pos_debug)
+        draw_pos_debug();
 
     if (need_dashboard)
         draw_dashboard();

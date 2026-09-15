@@ -28,7 +28,8 @@ public:
     static void render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h,
                              bool in_gameplay = true,
                              const std::vector<RemasterUIRect> &ui_rects = {},
-                             int level_ambient = 32);
+                             int level_ambient = 32,
+                             float cam_x = 0.0f, float cam_y = 0.0f);
     static void render_classic(const void *pixel_data, int src_w, int src_h, int window_w, int window_h);
     static void capture_screenshot(const char *filepath, int window_w, int window_h);
 
@@ -78,6 +79,9 @@ private:
     // Bloom Ping-Pong FBOs & Textures
     static GLuint s_bloom_fbo[2];
     static GLuint s_bloom_texture[2];
+
+    // AI Master Materials GPU Texture Array
+    static GLuint s_ai_materials_tex;
 
     static float s_time;
 };

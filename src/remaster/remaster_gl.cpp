@@ -6,6 +6,8 @@
 #include "remaster_hd.h"
 #include "common.h"
 #include "image.h"
+#include "file_utils.h"
+#include "loader2.h"
 
 #include <iostream>
 #include <vector>
@@ -42,6 +44,7 @@ GLuint RemasterGL::s_lit_texture = 0;
 
 GLuint RemasterGL::s_bloom_fbo[2] = {0, 0};
 GLuint RemasterGL::s_bloom_texture[2] = {0, 0};
+GLuint RemasterGL::s_ai_materials_tex = 0;
 
 float RemasterGL::s_time = 0.0f;
 
@@ -198,6 +201,16 @@ bool RemasterGL::init(int screen_w, int screen_h)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+    // Create dynamic sprite mask texture
+    glGenTextures(1, &s_sprite_mask_texture);
+    glBindTexture(GL_TEXTURE_2D, s_sprite_mask_texture);
+    std::vector<uint8_t> blank_mask(screen_w * screen_h, 0);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, screen_w, screen_h, 0, GL_RED, GL_UNSIGNED_BYTE, blank_mask.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
     // Compile Shaders
     if (!compile_shader(s_classic_prog, RemasterShaders::quad_vs, RemasterShaders::classic_fs)) return false;
     if (!compile_shader(s_gbuffer_prog, RemasterShaders::quad_vs, RemasterShaders::gbuffer_fs)) return false;
@@ -208,6 +221,61 @@ bool RemasterGL::init(int screen_w, int screen_h)
     init_fbo(screen_w, screen_h);
     RemasterHUD::get().init();
     RemasterHD::get().init();
+
+    // Load AI Master Materials (1024x1024 2D Texture Array)
+    if (!s_ai_materials_tex)
+    {
+        std::vector<std::string> candidate_paths;
+        char *prefix = get_filename_prefix();
+        if (prefix && prefix[0])
+        {
+            candidate_paths.push_back(std::string(prefix) + "/hd/ai_materials.bin");
+            candidate_paths.push_back(std::string(prefix) + "/ai_materials.bin");
+        }
+        candidate_paths.push_back("data/hd/ai_materials.bin");
+        candidate_paths.push_back("abuse.app/Contents/Resources/data/hd/ai_materials.bin");
+        candidate_paths.push_back("../Resources/data/hd/ai_materials.bin");
+
+        for (const auto &p : candidate_paths)
+        {
+            FILE *f_ai = fopen(p.c_str(), "rb");
+            if (!f_ai)
+            {
+                std::cout << "[RemasterGL] AI mat path: " << p << " -> fopen failed" << std::endl;
+                continue;
+            }
+            std::cout << "[RemasterGL] AI mat path: " << p << " -> OPENED!" << std::endl;
+            char sig[8];
+            size_t n_sig = fread(sig, 1, 8, f_ai);
+            std::cout << "[RemasterGL] sig read: " << n_sig << " bytes, cmp=" << (n_sig == 8 ? std::memcmp(sig, "AIMAT1.0", 8) : -1) << std::endl;
+            if (n_sig == 8 && std::memcmp(sig, "AIMAT1.0", 8) == 0)
+                {
+                    uint32_t count = 0, mw = 0, mh = 0;
+                    if (fread(&count, 4, 1, f_ai) == 1 &&
+                        fread(&mw, 4, 1, f_ai) == 1 &&
+                        fread(&mh, 4, 1, f_ai) == 1 && count > 0 && mw > 0 && mh > 0)
+                    {
+                        std::vector<uint8_t> data((size_t)count * mw * mh * 4);
+                        if (fread(data.data(), 1, data.size(), f_ai) == data.size())
+                        {
+                            glGenTextures(1, &s_ai_materials_tex);
+                            glBindTexture(GL_TEXTURE_2D_ARRAY, s_ai_materials_tex);
+                            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, mw, mh, count, 0, GL_RGBA, GL_UNSIGNED_BYTE, data.data());
+                            glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+                            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                            glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+                            std::cout << "[RemasterGL] Loaded " << count << " AI Master Materials (" << mw << "x" << mh << ") into GPU Texture Array from " << p << std::endl;
+                            fclose(f_ai);
+                            break;
+                        }
+                    }
+                }
+                fclose(f_ai);
+            }
+        }
 
     s_initialized = true;
     std::cout << "[RemasterGL] Initialized Modern 2D Deferred GPU Pipeline (GL 3.3 Core)." << std::endl;
@@ -220,6 +288,12 @@ void RemasterGL::shutdown()
 
     RemasterHUD::get().cleanup();
     RemasterHD::get().cleanup();
+
+    if (s_ai_materials_tex)
+    {
+        glDeleteTextures(1, &s_ai_materials_tex);
+        s_ai_materials_tex = 0;
+    }
 
     glDeleteVertexArrays(1, &s_quad_vao);
     glDeleteBuffers(1, &s_quad_vbo);
@@ -339,8 +413,9 @@ void RemasterGL::capture_screenshot(const char *filepath, int window_w, int wind
     fclose(f);
 }
 
-static void check_dump_screenshot(int window_w, int window_h)
+static void check_dump_screenshot(int window_w, int window_h, bool in_gameplay)
 {
+    if (!in_gameplay) return;
     static int s_frame_counter = 0;
     s_frame_counter++;
 
@@ -410,13 +485,14 @@ void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, in
     // Remaster HUD & Notification pass
     RemasterHUD::get().render(window_w, window_h, vp_x, vp_y, vp_w, vp_h, src_w, src_h);
 
-    check_dump_screenshot(window_w, window_h);
+    check_dump_screenshot(window_w, window_h, false);
 }
 
 void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h,
                               bool in_gameplay,
                               const std::vector<RemasterUIRect> &ui_rects,
-                              int level_ambient)
+                              int level_ambient,
+                              float cam_x, float cam_y)
 {
     s_time += 0.01667f;
     auto &cfg = RemasterConfig::get();
@@ -448,6 +524,55 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     glBindTexture(GL_TEXTURE_2D, s_source_texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, src_w, src_h, 0, GL_BGRA, GL_UNSIGNED_BYTE, pixel_data);
 
+    if (getenv("DUMP_RAW_PIXELS") && in_gameplay)
+    {
+        static int s_raw_done = 0;
+        if (s_raw_done++ == 24)
+        {
+            std::string tmp_bmp = "/Users/mberguer/.gemini/antigravity/brain/7829aad7-21ac-4465-ba25-1fade3429f56/scratch/raw_pixel_data.bmp";
+            std::string final_png = "/Users/mberguer/.gemini/antigravity/brain/7829aad7-21ac-4465-ba25-1fade3429f56/raw_pixel_data.png";
+            uint32_t row_size = ((src_w * 3 + 3) / 4) * 4;
+            uint32_t image_size = row_size * src_h;
+            uint32_t file_size = 54 + image_size;
+            uint8_t header[54] = {
+                'B', 'M',
+                static_cast<uint8_t>(file_size), static_cast<uint8_t>(file_size >> 8),
+                static_cast<uint8_t>(file_size >> 16), static_cast<uint8_t>(file_size >> 24),
+                0, 0, 0, 0, 54, 0, 0, 0, 40, 0, 0, 0,
+                static_cast<uint8_t>(src_w), static_cast<uint8_t>(src_w >> 8),
+                static_cast<uint8_t>(src_w >> 16), static_cast<uint8_t>(src_w >> 24),
+                static_cast<uint8_t>(src_h), static_cast<uint8_t>(src_h >> 8),
+                static_cast<uint8_t>(src_h >> 16), static_cast<uint8_t>(src_h >> 24),
+                1, 0, 24, 0, 0, 0, 0, 0,
+                static_cast<uint8_t>(image_size), static_cast<uint8_t>(image_size >> 8),
+                static_cast<uint8_t>(image_size >> 16), static_cast<uint8_t>(image_size >> 24),
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            };
+            FILE *f = fopen(tmp_bmp.c_str(), "wb");
+            if (f)
+            {
+                fwrite(header, 1, 54, f);
+                const uint8_t *src_px = static_cast<const uint8_t *>(pixel_data);
+                std::vector<uint8_t> row(row_size, 0);
+                for (int y = src_h - 1; y >= 0; y--)
+                {
+                    for (int x = 0; x < src_w; x++)
+                    {
+                        int src_idx = (y * src_w + x) * 4;
+                        row[x * 3 + 0] = src_px[src_idx + 0]; // B
+                        row[x * 3 + 1] = src_px[src_idx + 1]; // G
+                        row[x * 3 + 2] = src_px[src_idx + 2]; // R
+                    }
+                    fwrite(row.data(), 1, row_size, f);
+                }
+                fclose(f);
+                std::string cmd = "sips -s format png \"" + tmp_bmp + "\" --out \"" + final_png + "\" >/dev/null 2>&1";
+                system(cmd.c_str());
+                printf("[RemasterGL] Wrote raw pixel data to %s\n", final_png.c_str());
+            }
+        }
+    }
+
     // 2. G-Buffer Pass: Extract Albedo, Normal (Sobel filter), Emission, Occlusion
     glBindFramebuffer(GL_FRAMEBUFFER, s_gbuffer_fbo);
     glViewport(0, 0, s_fbo_w, s_fbo_h);
@@ -468,7 +593,49 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     glUniform1i(glGetUniformLocation(s_gbuffer_prog, "u_hd_scaler"), cfg.hd_textures ? 1 : 0);
     glUniform1f(glGetUniformLocation(s_gbuffer_prog, "u_normal_strength"), cfg.normal_strength);
 
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, s_sprite_mask_texture);
+    if (!s_sprite_mask.empty() && s_sprite_mask.size() >= (size_t)(src_w * src_h))
+    {
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, src_w, src_h, GL_RED, GL_UNSIGNED_BYTE, s_sprite_mask.data());
+    }
+    glUniform1i(glGetUniformLocation(s_gbuffer_prog, "u_sprite_mask"), 1);
+
+    glActiveTexture(GL_TEXTURE5);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, s_ai_materials_tex);
+    glUniform1i(glGetUniformLocation(s_gbuffer_prog, "u_ai_materials"), 5);
+    glUniform1i(glGetUniformLocation(s_gbuffer_prog, "u_has_ai_materials"), (s_ai_materials_tex != 0 && cfg.hd_textures) ? 1 : 0);
+    glUniform2f(glGetUniformLocation(s_gbuffer_prog, "u_cam_pos"), cam_x, cam_y);
+
+    if (cfg.hd_textures) {
+        int ft_w = f_wid > 0 ? f_wid : 16;
+        int ft_h = f_hi > 0 ? f_hi : 16;
+        RemasterHD::get().update_frame_data((int)cam_x, (int)cam_y, src_w, src_h, ft_w, ft_h, 0, 0);
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, RemasterHD::get().get_tile_grid_tex());
+        glUniform1i(glGetUniformLocation(s_gbuffer_prog, "u_tile_grid"), 6);
+        float grid_bounds[4] = {
+            (float)RemasterHD::get().get_grid_ox(), (float)RemasterHD::get().get_grid_oy(),
+            (float)RemasterHD::get().get_grid_w(), (float)RemasterHD::get().get_grid_h()
+        };
+        glUniform4fv(glGetUniformLocation(s_gbuffer_prog, "u_grid_bounds"), 1, grid_bounds);
+        glUniform2f(glGetUniformLocation(s_gbuffer_prog, "u_tile_size"), (float)ft_w, (float)ft_h);
+    }
+
     render_quad();
+
+    if (cfg.hd_textures) {
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    glActiveTexture(GL_TEXTURE5);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
     // 3. 2D Ray Tracing & Dynamic Lighting Pass
     glBindFramebuffer(GL_FRAMEBUFFER, s_lit_fbo);
@@ -523,7 +690,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     {
         // High-contrast atmospheric sci-fi ambient, modulated by level's authentic darkness (0..63)
         float level_factor = std::clamp((float)level_ambient / 32.0f, 0.40f, 1.25f);
-        float amb = 0.42f * cfg.ambient_intensity * level_factor;
+        float amb = std::max(0.20f, 0.45f * cfg.ambient_intensity * level_factor);
         glUniform3f(glGetUniformLocation(s_raytracing_prog, "u_ambient_color"), amb, amb, amb);
         glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_raytracing_enabled"), cfg.raytracing ? 1 : 0);
         glUniform1i(glGetUniformLocation(s_raytracing_prog, "u_soft_shadows"), cfg.soft_shadows ? 1 : 0);
@@ -634,5 +801,5 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     // 6. Modern Widescreen HUD & In-Game Dashboard Pass
     RemasterHUD::get().render(window_w, window_h, vp_x, vp_y, vp_w, vp_h, src_w, src_h);
 
-    check_dump_screenshot(window_w, window_h);
+    check_dump_screenshot(window_w, window_h, in_gameplay);
 }

@@ -771,7 +771,7 @@ void Game::draw_map(view *v, int interpolate)
     ivec2 old_aa(0), old_bb(0);
     image *old_screen = NULL;
 
-  if(small_render && (dev & DRAW_LIGHTS))  // cannot do this if we skip lighting
+  if(small_render && (dev & DRAW_LIGHTS) && !RemasterConfig::get().enabled)  // cannot do this if we skip lighting
   {
     old_aa = v->m_aa;
     old_bb = v->m_bb;
@@ -1096,7 +1096,7 @@ void Game::draw_map(view *v, int interpolate)
 	//AR this is showing that annoying flashing icon in bottom-left corner, so I disabled it
     //if(cache.in_use()) main_screen->PutImage(cache.img(vmm_image), ivec2(v->m_aa.x, v->m_bb.y - cache.img(vmm_image)->Size().y+1));
 
-    if(dev & DRAW_LIGHTS)
+    if((dev & DRAW_LIGHTS) && !RemasterConfig::get().enabled)
     {
       if(small_render)
       {
@@ -1132,7 +1132,9 @@ void Game::draw_map(view *v, int interpolate)
 
 
   if(playing_state(state))        // draw stuff outside the clipping region
+  {
     v->draw_character_damage();
+  }
 
   if(profiling())
     profile_update();
@@ -1558,7 +1560,7 @@ Game::Game(int argc, char **argv)
     set_frame_size(0);
   state = START_STATE;         // first set the state to one that has windows
 
-  if (get_option("-run") && level_file[0])
+  if ((get_option("-run") || getenv("ABUSE_DUMP_FRAME")) && level_file[0])
   {
     the_game->load_level(level_file);
     start_running = 1;
