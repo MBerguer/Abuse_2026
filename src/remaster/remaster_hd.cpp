@@ -271,23 +271,9 @@ void RemasterHD::update_frame_data(int cam_x, int cam_y, int view_w, int view_h,
             // 3 = Walkable flat floor / catwalk platform (VERDE)
             // 4 = Walkable ramp slope down-right (VERDE)
             // 5 = Walkable ramp slope down-left (VERDE)
-            // 6 = Solid foundation / undercarriage
-            if (tile_id_fg == 18)
-            {
-                sem_type = 4; // Ramp slope down-right
-                floor_y = 0;
-            }
-            else if (tile_id_fg == 19)
-            {
-                sem_type = 5; // Ramp slope down-left
-                floor_y = 0;
-            }
-            else if (tile_id_fg >= 82 && tile_id_fg <= 84)
-            {
-                sem_type = 3; // Catwalk platform
-                floor_y = 2;   // Collision walking surface at y = 2
-            }
-            else if (tile_id_fg == 10 || tile_id_fg == 11 || tile_id_fg == 12)
+            // 6 = Ceiling wedge / under-stair slope (VERDE)
+            // 7 = Solid subterranean foundation / continuous wall (VERDE)
+            if (tile_id_fg == 10 || tile_id_fg == 11 || tile_id_fg == 12)
             {
                 sem_type = 2; // Vertical framing pillar & column base
             }
@@ -297,38 +283,116 @@ void RemasterHD::update_frame_data(int cam_x, int cam_y, int view_w, int view_h,
             }
             else if (tile_id_fg == 23 || tile_id_fg == 88 || tile_id_fg == 89)
             {
-                sem_type = 6; // Under-ramp structural truss / foundation
+                sem_type = 7; // Under-ramp structural truss / foundation
             }
             else if (the_game && tile_id_fg > 0)
             {
                 foretile *f = the_game->get_fg(tile_id_fg);
-                if (f)
+                if (f && f->points && f->points->tot > 0)
                 {
-                    if (f->points && f->points->tot == 4)
+                    int tot = f->points->tot;
+                    uint8_t *pts = f->points->data;
+
+                    if (tot == 4)
                     {
-                        sem_type = 4;
-                    }
-                    else if (f->points && f->points->tot > 0)
-                    {
-                        if (f->ylevel < 15 && f->ylevel > 0)
+                        // 4-point polygon: either a walkable floor ramp or a ceiling wedge
+                        // Walkable floor ramps have solid bottom: both (0,14) and (29,14)
+                        bool has_bot_left  = false; // (0, 14)
+                        bool has_bot_right = false; // (29, 14)
+                        bool has_top_left  = false; // (0, 0)
+                        bool has_top_right = false; // (29, 0)
+                        for (int i = 0; i < tot; i++)
                         {
-                            sem_type = 3; // Flat floor
-                            floor_y = f->ylevel;
+                            int px = pts[i*2];
+                            int py = pts[i*2+1];
+                            if (px == 0  && py >= 13) has_bot_left  = true;
+                            if (px >= 28 && py >= 13) has_bot_right = true;
+                            if (px == 0  && py <= 1)  has_top_left  = true;
+                            if (px >= 28 && py <= 1)  has_top_right = true;
+                        }
+
+                        if (has_bot_left && has_bot_right)
+                        {
+                            // Walkable Floor Ramp!
+                            if (has_top_left)
+                            {
+                                sem_type = 4; // Ramp down-right (e.g. tile 18, 20, 166)
+                                floor_y = 0;
+                            }
+                            else if (has_top_right)
+                            {
+                                sem_type = 5; // Ramp down-left (e.g. tile 19, 22, 164)
+                                floor_y = 0;
+                            }
+                            else
+                            {
+                                sem_type = 7; // Solid foundation
+                            }
+                        }
+                        else if (has_top_left && has_top_right)
+                        {
+                            // Ceiling Wedge! (e.g. tiles 45, 46, 63, 64, 163, 165)
+                            // Solid ceiling girder above slope, air under stairs below slope.
+                            sem_type = 6;
+                            if (has_bot_left)
+                                floor_y = 1; // Slope from (0, 14) to (29, 0) (tile 63)
+                            else
+                                floor_y = 2; // Slope from (0, 0) to (29, 14) (tile 64)
                         }
                         else
                         {
-                            sem_type = 2; // Solid wall/column
+                            sem_type = 7; // Solid subterranean fill
+                        }
+                    }
+                    else if (tot == 5)
+                    {
+                        // 5-point polygon: check if top surface forms a flat floor
+                        // All Abuse floor tiles (14, 15, 26, 47, 82, 83, 85, etc.) have (0,2) to (29,2)
+                        bool has_floor_surf = false;
+                        int surf_y = 2;
+                        for (int i = 0; i < tot - 1; i++)
+                        {
+                            int y1 = pts[i*2+1];
+                            int y2 = pts[(i+1)*2+1];
+                            if (y1 == y2 && y1 >= 1 && y1 <= 5)
+                            {
+                                has_floor_surf = true;
+                                surf_y = y1;
+                                break;
+                            }
+                        }
+
+                        if (has_floor_surf || (f->ylevel > 0 && f->ylevel < 15))
+                        {
+                            sem_type = 3; // Walkable flat floor platform!
+                            floor_y = has_floor_surf ? surf_y : f->ylevel;
+                        }
+                        else
+                        {
+                            sem_type = 7; // Solid subterranean foundation block (e.g. tile 28, 58)
                         }
                     }
                     else
                     {
-                        sem_type = 1; // Decorative mesh
+                        if (f->ylevel > 0 && f->ylevel < 15)
+                        {
+                            sem_type = 3;
+                            floor_y = f->ylevel;
+                        }
+                        else
+                        {
+                            sem_type = 7; // Solid subterranean foundation
+                        }
                     }
+                }
+                else
+                {
+                    sem_type = 1; // Middleground room wall mesh
                 }
             }
             else
             {
-                sem_type = 0; // Deep background / void (AZUL)
+                sem_type = 0; // Deep background / abyss (AZUL)
             }
 
             size_t idx = (gy * m_grid_w + gx) * 4;
@@ -340,20 +404,7 @@ void RemasterHD::update_frame_data(int cam_x, int cam_y, int view_w, int view_h,
     }
 
     // Upload to OpenGL tile grid texture
-    static bool s_printed = false;
-    if (!s_printed && getenv("ABUSE_DUMP_FRAME") && the_game) {
-        s_printed = true;
-        for (int tid : {10, 11, 12, 18, 19, 23, 82, 83, 84}) {
-            foretile *f = the_game->get_fg(tid);
-            if (f && f->points) {
-                printf("Tile %d (tot=%d): ", tid, f->points->tot);
-                for (int i = 0; i < f->points->tot; i++) {
-                    printf("(%d,%d) ", (int)f->points->data[i*2], (int)f->points->data[i*2+1]);
-                }
-                printf("\n");
-            }
-        }
-    }
+
     glBindTexture(GL_TEXTURE_2D, m_tile_grid_tex);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_grid_w, m_grid_h, GL_RGBA_INTEGER, GL_SHORT, m_grid_buffer.data());
     glBindTexture(GL_TEXTURE_2D, 0);

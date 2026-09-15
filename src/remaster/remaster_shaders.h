@@ -392,7 +392,7 @@ void main()
         }
         else if (tile_type == 3)
         {
-            // Walkable flat catwalk platform (tiles 82, 83, 84)
+            // Walkable flat catwalk platform / floor block (tiles 47, 82, 83, 84, etc.)
             float plat_y = float(floor_y_ref);
             float dist = tile_local.y - plat_y;
             if (dist < -0.8)
@@ -400,9 +400,9 @@ void main()
                 layer = 2.0; // Air above catwalk: alcove mesh behind
                 uv_mat = fract(world_pos / 48.0);
             }
-            else
+            else if (dist <= 4.0)
             {
-                layer = 3.0; // Catwalk plate
+                layer = 3.0; // Catwalk / floor plate
                 uv_mat = fract(world_pos / 48.0);
                 float edge_dist = abs(dist);
                 if (edge_dist <= 1.1)
@@ -413,6 +413,43 @@ void main()
                 {
                     is_floor_crease = 1.0 - abs(dist - 1.75) / 0.65;
                 }
+            }
+            else
+            {
+                // Beneath floor plate: solid subterranean foundation wall!
+                tile_type = 7;
+                layer = 0.0;
+                uv_mat = fract(world_pos / 160.0);
+            }
+        }
+        else if (tile_type == 6)
+        {
+            // Ceiling diagonal wedge / under-stair slope (tiles 45, 46, 63, 64, 163, 165)
+            float ceil_y = 0.0;
+            if (floor_y_ref == 1)
+            {
+                // Slope from (0, 14) up to (29, 0) (e.g. tile 63, 45, 163)
+                ceil_y = (29.0 - tile_local.x) * (14.0 / 29.0);
+            }
+            else
+            {
+                // Slope from (0, 0) down to (29, 14) (e.g. tile 64, 46, 165)
+                ceil_y = tile_local.x * (14.0 / 29.0);
+            }
+
+            if (tile_local.y < ceil_y)
+            {
+                // Solid ceiling girder above the slope
+                layer = 0.0;
+                uv_mat = fract(world_pos / 160.0);
+                tile_type = 7; // Solid structural alloy
+            }
+            else
+            {
+                // Air under the stairs: middleground alcove room mesh wall behind
+                layer = 2.0;
+                uv_mat = fract(world_pos / 48.0);
+                tile_type = 1; // Middleground mesh
             }
         }
         else if (tile_type == 2)
@@ -435,11 +472,11 @@ void main()
                 uv_mat = fract(world_pos / 48.0);
             }
         }
-        else if (tile_type == 6)
+        else if (tile_type == 7)
         {
-            // Under-ramp foundation / machinery chassis
+            // Solid subterranean foundation wall (tiles 28, 58, 67, etc.)
             layer = 0.0;
-            uv_mat = fract(world_pos / 64.0);
+            uv_mat = fract(world_pos / 160.0);
         }
         else
         {
@@ -452,14 +489,26 @@ void main()
         vec3 ai_rgb = ai_samp.rgb;
 
         // High-resolution Normal gradient from AI material
+        float norm_scale = 2.2;
+        if (tile_type == 7)
+        {
+            // Subterranean foundation wall: very gentle normal modulation
+            // to completely eliminate harsh horizontal ribs and grid lines!
+            norm_scale = 0.20;
+        }
+        else if (layer == 4.0 || tile_type == 0)
+        {
+            norm_scale = 0.6; // Deep background: soft relief
+        }
+
         vec2 eps = vec2(1.5 / 1024.0);
         float l_ai = dot(texture(u_ai_materials, vec3(uv_mat - vec2(eps.x, 0.0), layer)).rgb, vec3(0.299, 0.587, 0.114));
         float r_ai = dot(texture(u_ai_materials, vec3(uv_mat + vec2(eps.x, 0.0), layer)).rgb, vec3(0.299, 0.587, 0.114));
         float d_ai = dot(texture(u_ai_materials, vec3(uv_mat - vec2(0.0, eps.y), layer)).rgb, vec3(0.299, 0.587, 0.114));
         float u_ai = dot(texture(u_ai_materials, vec3(uv_mat + vec2(0.0, eps.y), layer)).rgb, vec3(0.299, 0.587, 0.114));
 
-        dx += (l_ai - r_ai) * 2.2;
-        dy += (d_ai - u_ai) * 2.2;
+        dx += (l_ai - r_ai) * norm_scale;
+        dy += (d_ai - u_ai) * norm_scale;
 
         if (layer == 3.0)
         {
@@ -535,6 +584,17 @@ void main()
             roughness = 0.18;
             metallic = 0.40;
         }
+        else if (tile_type == 7)
+        {
+            // VERDE: Solid Subterranean Foundation Wall (Under Floor)
+            // Solid, smooth, heavy industrial alloy/concrete backing
+            // Softens repetitive 30x15 tile box grooves so it forms a unified, monolithic architectural foundation
+            col.rgb = mix(col.rgb * 0.88, col.rgb * (ai_rgb * 1.20), 0.30);
+            metallic = 0.75;
+            roughness = 0.30;
+            dx *= 0.25;
+            dy *= 0.25;
+        }
         else if (tile_type == 2)
         {
             // VERDE: Solid Vertical Structural Columns (Pillars 10, 11)
@@ -543,9 +603,12 @@ void main()
             metallic = 0.85;
             roughness = 0.22;
 
-            // Bevel edges on the columns
-            if (tile_local.x < 4.0) dx += 2.0;
-            else if (tile_local.x > 26.0) dx -= 2.0;
+            // Bevel edges strictly on framing columns (tiles 10, 11)
+            if (tile_id_fg == 10 || tile_id_fg == 11)
+            {
+                if (tile_local.x < 4.0) dx += 2.0;
+                else if (tile_local.x > 26.0) dx -= 2.0;
+            }
         }
         else if (layer == 4.0 || tile_type == 0)
         {
@@ -562,6 +625,17 @@ void main()
             col.rgb = mix(col.rgb * 0.80, col.rgb * (ai_rgb * 1.30), 0.35);
             metallic = 0.75;
             roughness = 0.32;
+        }
+
+        // Under-stair contact shadow (tiles 45, 46, 63, 64, 163, 165)
+        if (tile_id_fg == 63 || tile_id_fg == 45 || tile_id_fg == 163 || tile_id_fg == 64 || tile_id_fg == 46 || tile_id_fg == 165)
+        {
+            float ceil_y = (floor_y_ref == 1) ? ((29.0 - tile_local.x) * (14.0 / 29.0)) : (tile_local.x * (14.0 / 29.0));
+            float edge_gap = abs(tile_local.y - ceil_y);
+            if (edge_gap < 1.4)
+            {
+                col.rgb *= 0.72; // Soft contact shadow under the stair slope
+            }
         }
     }
     else if (u_hd_scaler == 1 && is_sprite > 0.5)
