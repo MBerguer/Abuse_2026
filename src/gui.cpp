@@ -18,6 +18,9 @@
 #include "gui.h"
 #include "dev.h"
 #include "loader2.h"
+#include "remaster/remaster_config.h"
+#include "sdlport/setup.h"
+extern Settings settings;
 
 void ico_button::set_act_id(int id)
 {
@@ -86,6 +89,8 @@ void ico_switch_button::handle_event(Event &ev, image *screen, InputManager *im)
 
 }
 
+#include "remaster/remaster_config.h"
+
 void ico_button::draw(int active, image *screen)
 {
     int x1, y1, x2, y2;
@@ -94,24 +99,30 @@ void ico_button::draw(int active, image *screen)
     if (active != act && activate_id != -1 && active)
         wm->Push(new Event(activate_id, NULL));
 
-    screen->PutImage(cache.img((up && !active) ? u :
-                               (up && active) ? ua :
-                               (!up && !active) ? d : da), ivec2(x1, y1));
+    if (!RemasterConfig::get().enabled)
+    {
+        screen->PutImage(cache.img((up && !active) ? u :
+                                   (up && active) ? ua :
+                                   (!up && !active) ? d : da), ivec2(x1, y1));
+    }
 
     if (act != active && active && activate_id != -1)
         wm->Push(new Event(activate_id, NULL));
     act = active;
 
-    if (active && key[0])
+    if (!RemasterConfig::get().enabled)
     {
-        int g=80;
-        screen->Bar(ivec2(0, 0), ivec2(144, 20), 0);
-        wm->font()->PutString(screen, ivec2(0), symbol_str(key),
-                              color_table->Lookup(g>>3, g>>3, g>>3));
-    }
-    else if (!active && key[0])
-    {
-        screen->Bar(ivec2(0, 0), ivec2(144, 20), 0);
+        if (active && key[0])
+        {
+            int g=80;
+            screen->Bar(ivec2(0, 0), ivec2(144, 20), 0);
+            wm->font()->PutString(screen, ivec2(0), symbol_str(key),
+                                  color_table->Lookup(g>>3, g>>3, g>>3));
+        }
+        else if (!active && key[0])
+        {
+            screen->Bar(ivec2(0, 0), ivec2(144, 20), 0);
+        }
     }
 }
 
@@ -138,6 +149,12 @@ void ico_button::area(int &x1, int &y1, int &x2, int &y2)
   x1=m_pos.x; y1=m_pos.y;
   x2=m_pos.x+cache.img(u)->Size().x-1;
   y2=m_pos.y+cache.img(u)->Size().y-1;
+  if (RemasterConfig::get().enabled)
+  {
+    extern int xres;
+    x1 = std::max(0, xres - (settings.hires ? 110 : 85));
+    x2 = xres - 1;
+  }
 }
 
 ico_button::ico_button(int X, int Y, int ID, int Up, int down, int upa, int downa, ifield *Next, int act_id, char const *help_key)

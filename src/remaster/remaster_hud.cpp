@@ -13,6 +13,14 @@
 #include "level.h"
 #include "game.h"
 #include "loader2.h"
+#include "sbar.h"
+#include "cache.h"
+#include "file_utils.h"
+#include "netcfg.h"
+#include "net/sock.h"
+#include "sdlport/setup.h"
+#include "loadgame.h"
+#include "clisp.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -22,6 +30,8 @@ extern unsigned char fnt6x13[192 * 104];
 extern WindowManager *wm;
 extern palette *pal;
 extern int xres, yres;
+extern Settings settings;
+extern net_protocol *prot;
 
 namespace
 {
@@ -204,6 +214,23 @@ bool RemasterHUD::init()
     return true;
 }
 
+void RemasterHUD::update_canvas(int w, int h)
+{
+    if (w <= 0 || h <= 0) return;
+    if (m_canvas_w == w && m_canvas_h == h && !m_pixels.empty())
+        return;
+
+    m_canvas_w = w;
+    m_canvas_h = h;
+    m_pixels.assign(m_canvas_w * m_canvas_h, 0);
+
+    if (m_texture)
+    {
+        glBindTexture(GL_TEXTURE_2D, m_texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_canvas_w, m_canvas_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    }
+}
+
 void RemasterHUD::cleanup()
 {
     if (m_texture)
@@ -217,6 +244,13 @@ void RemasterHUD::cleanup()
         m_prog = 0;
     }
     m_pixels.clear();
+    for (int i = 0; i < 8; i++)
+    {
+        m_hd_weapons[i].pixels.clear();
+        m_hd_weapons[i].width = 0;
+        m_hd_weapons[i].height = 0;
+    }
+    m_assets_loaded = false;
     m_initialized = false;
 }
 
@@ -398,12 +432,726 @@ void RemasterHUD::draw_cursor(int dst_x0, int dst_y0, int dst_w, int dst_h, void
     }
 }
 
+bool RemasterHUD::load_texture_rgba(const std::string &rel_path, HDTexture &out_tex)
+{
+    std::vector<std::string> candidates;
+    char *pfx = get_filename_prefix();
+    if (pfx && pfx[0])
+    {
+        candidates.push_back(std::string(pfx) + "/" + rel_path);
+        candidates.push_back(std::string(pfx) + "/hd/hud/" + rel_path);
+    }
+    char *spfx = get_save_filename_prefix();
+    if (spfx && spfx[0])
+    {
+        candidates.push_back(std::string(spfx) + "/data/" + rel_path);
+        candidates.push_back(std::string(spfx) + "/data/hd/hud/" + rel_path);
+    }
+    candidates.push_back(rel_path);
+    candidates.push_back("data/" + rel_path);
+    candidates.push_back("data/hd/hud/" + rel_path);
+    candidates.push_back("abuse.app/Contents/Resources/data/" + rel_path);
+    candidates.push_back("abuse.app/Contents/Resources/data/hd/hud/" + rel_path);
+    candidates.push_back("../Resources/data/hd/hud/" + rel_path);
+    candidates.push_back("build/src/abuse.app/Contents/Resources/data/hd/hud/" + rel_path);
+
+    for (const auto &path : candidates)
+    {
+        FILE *f = fopen(path.c_str(), "rb");
+        if (f)
+        {
+            uint32_t w = 0, h = 0;
+            if (fread(&w, 4, 1, f) == 1 && fread(&h, 4, 1, f) == 1 &&
+                w > 0 && h > 0 && w <= 4096 && h <= 4096)
+            {
+                out_tex.width = static_cast<int>(w);
+                out_tex.height = static_cast<int>(h);
+                out_tex.pixels.resize(w * h);
+                size_t read_bytes = fread(out_tex.pixels.data(), 4, w * h, f);
+                fclose(f);
+                if (read_bytes == static_cast<size_t>(w * h))
+                {
+                    printf("[RemasterHUD] Loaded HD texture %s (%dx%d) from %s\n", rel_path.c_str(), w, h, path.c_str());
+                    return true;
+                }
+            }
+            else
+            {
+                fclose(f);
+            }
+        }
+    }
+    return false;
+}
+
+void RemasterHUD::load_all_assets()
+{
+    if (m_assets_loaded) return;
+    load_texture_rgba("hud_bay_empty.rgba", m_hud_bay_empty);
+    load_texture_rgba("hud_top_grate.rgba", m_hud_top_grate);
+    load_texture_rgba("weapon_01.rgba", m_hd_weapons[0]);
+    load_texture_rgba("weapon_02.rgba", m_hd_weapons[1]);
+    m_assets_loaded = true;
+}
+
+void RemasterHUD::draw_seven_segment_digit(uint32_t *buf, int bw, int bh, int x, int y, int digit, int seg_w, int seg_h, int thickness, uint32_t on_color, uint32_t off_color, bool glow)
+{
+    static const uint8_t s_seg_masks[10] = {
+        0x3F, // 0: a, b, c, d, e, f
+        0x06, // 1: b, c
+        0x5B, // 2: a, b, d, e, g
+        0x4F, // 3: a, b, c, d, g
+        0x66, // 4: b, c, f, g
+        0x6D, // 5: a, c, d, f, g
+        0x7D, // 6: a, c, d, e, f, g
+        0x07, // 7: a, b, c
+        0x7F, // 8: a, b, c, d, e, f, g
+        0x6F  // 9: a, b, c, d, f, g
+    };
+
+    uint8_t mask = 0;
+    if (digit >= 0 && digit <= 9)
+        mask = s_seg_masks[digit];
+
+    int t = std::max(2, thickness);
+    seg_w = std::max(t * 3 + 2, seg_w);
+    seg_h = std::max(t * 5 + 4, seg_h);
+
+    int mid_y = y + (seg_h - t) / 2;
+    int seg_len_v = mid_y - (y + t);
+    int seg_len_h = seg_w - 2 * t;
+
+    struct SegInfo {
+        char type; // 'h' or 'v'
+        int sx, sy, slen, st;
+    };
+
+    SegInfo segs[7] = {
+        { 'h', x + t, y, seg_len_h, t },                         // 0: a (top)
+        { 'v', x + seg_w - t, y + t, seg_len_v, t },             // 1: b (top-right)
+        { 'v', x + seg_w - t, mid_y + t, seg_len_v, t },         // 2: c (bottom-right)
+        { 'h', x + t, y + seg_h - t, seg_len_h, t },            // 3: d (bottom)
+        { 'v', x, mid_y + t, seg_len_v, t },                     // 4: e (bottom-left)
+        { 'v', x, y + t, seg_len_v, t },                         // 5: f (top-left)
+        { 'h', x + t, mid_y, seg_len_h, t }                      // 6: g (middle)
+    };
+
+    auto draw_horiz_miter = [&](int hx, int hy, int len, int th, uint32_t col) {
+        int half = th / 2;
+        for (int dy = 0; dy < th; dy++) {
+            int py = hy + dy;
+            if (py < 0 || py >= bh) continue;
+            int inset = half - std::abs(dy - half);
+            int x1 = hx + inset;
+            int x2 = hx + len - inset;
+            for (int px = x1; px < x2; px++) {
+                if (px >= 0 && px < bw)
+                    buf[py * bw + px] = col;
+            }
+        }
+    };
+
+    auto draw_vert_miter = [&](int vx, int vy, int len, int th, uint32_t col) {
+        int half = th / 2;
+        for (int dx = 0; dx < th; dx++) {
+            int px = vx + dx;
+            if (px < 0 || px >= bw) continue;
+            int inset = half - std::abs(dx - half);
+            int y1 = vy + inset;
+            int y2 = vy + len - inset;
+            for (int py = y1; py < y2; py++) {
+                if (py >= 0 && py < bh)
+                    buf[py * bw + px] = col;
+            }
+        }
+    };
+
+    for (int s = 0; s < 7; s++)
+    {
+        bool is_lit = (mask & (1 << s)) != 0;
+        const auto &seg = segs[s];
+
+        if (is_lit)
+        {
+            if (glow)
+            {
+                uint32_t glow_col = modulate_alpha(on_color, 0.35f);
+                if (seg.type == 'h')
+                    draw_horiz_miter(seg.sx - 1, seg.sy - 1, seg.slen + 2, seg.st + 2, glow_col);
+                else
+                    draw_vert_miter(seg.sx - 1, seg.sy - 1, seg.slen + 2, seg.st + 2, glow_col);
+            }
+
+            if (seg.type == 'h')
+            {
+                draw_horiz_miter(seg.sx, seg.sy, seg.slen, seg.st, on_color);
+                uint32_t core = make_rgba(230, 255, 235, 220);
+                draw_horiz_miter(seg.sx + 2, seg.sy + seg.st / 2, seg.slen - 4, 1, core);
+            }
+            else
+            {
+                draw_vert_miter(seg.sx, seg.sy, seg.slen, seg.st, on_color);
+                uint32_t core = make_rgba(230, 255, 235, 220);
+                draw_vert_miter(seg.sx + seg.st / 2, seg.sy + 2, seg.slen - 4, 1, core);
+            }
+        }
+        else
+        {
+            if (seg.type == 'h')
+                draw_horiz_miter(seg.sx, seg.sy, seg.slen, seg.st, off_color);
+            else
+                draw_vert_miter(seg.sx, seg.sy, seg.slen, seg.st, off_color);
+        }
+    }
+}
+
+void RemasterHUD::draw_seven_segment_number(uint32_t *buf, int bw, int bh, int x, int y, int number, int num_digits, int seg_w, int seg_h, int thickness, uint32_t on_color, uint32_t off_color, bool glow, bool pad_zeroes)
+{
+    int digit_gap = std::max(2, seg_w / 4);
+    int d_val = number;
+
+    int digits[8];
+    for (int i = num_digits - 1; i >= 0; i--)
+    {
+        if (d_val >= 0)
+        {
+            digits[i] = d_val % 10;
+            d_val /= 10;
+        }
+        else
+        {
+            digits[i] = -1; // unlit
+        }
+    }
+
+    if (!pad_zeroes && number >= 0)
+    {
+        for (int i = 0; i < num_digits - 1; i++)
+        {
+            if (digits[i] == 0)
+                digits[i] = -1;
+            else
+                break;
+        }
+    }
+
+    int cur_x = x;
+    for (int i = 0; i < num_digits; i++)
+    {
+        draw_seven_segment_digit(buf, bw, bh, cur_x, y, digits[i], seg_w, seg_h, thickness, on_color, off_color, glow);
+        cur_x += seg_w + digit_gap;
+    }
+}
+
+void RemasterHUD::draw_texture(uint32_t *buf, int bw, int bh, int dst_x, int dst_y, int dst_w, int dst_h, const HDTexture &img, float brightness)
+{
+    if (img.width <= 0 || img.height <= 0 || img.pixels.empty() || dst_w <= 0 || dst_h <= 0)
+        return;
+
+    for (int dy = 0; dy < dst_h; dy++)
+    {
+        int py = dst_y + dy;
+        if (py < 0 || py >= bh) continue;
+
+        int sy = (dy * img.height) / dst_h;
+        if (sy >= img.height) sy = img.height - 1;
+
+        for (int dx = 0; dx < dst_w; dx++)
+        {
+            int px = dst_x + dx;
+            if (px < 0 || px >= bw) continue;
+
+            int sx = (dx * img.width) / dst_w;
+            if (sx >= img.width) sx = img.width - 1;
+
+            uint32_t src = img.pixels[sy * img.width + sx];
+            uint8_t sa = (src >> 24) & 0xFF;
+            if (sa == 0) continue;
+
+            uint8_t sr = static_cast<uint8_t>(std::clamp((src & 0xFF) * brightness, 0.0f, 255.0f));
+            uint8_t sg = static_cast<uint8_t>(std::clamp(((src >> 8) & 0xFF) * brightness, 0.0f, 255.0f));
+            uint8_t sb = static_cast<uint8_t>(std::clamp(((src >> 16) & 0xFF) * brightness, 0.0f, 255.0f));
+
+            if (sa == 255)
+            {
+                buf[py * bw + px] = make_rgba(sr, sg, sb, 255);
+            }
+            else
+            {
+                uint32_t dst = buf[py * bw + px];
+                uint8_t da = (dst >> 24) & 0xFF;
+                uint8_t dr = dst & 0xFF;
+                uint8_t dg = (dst >> 8) & 0xFF;
+                uint8_t db = (dst >> 16) & 0xFF;
+
+                float a = sa / 255.0f;
+                uint8_t out_r = static_cast<uint8_t>(sr * a + dr * (1.0f - a));
+                uint8_t out_g = static_cast<uint8_t>(sg * a + dg * (1.0f - a));
+                uint8_t out_b = static_cast<uint8_t>(sb * a + db * (1.0f - a));
+                uint8_t out_a = std::min(255, sa + da);
+
+                buf[py * bw + px] = make_rgba(out_r, out_g, out_b, out_a);
+            }
+        }
+    }
+}
+
+void RemasterHUD::draw_hud_statusbar(int window_w, int window_h, int vp_x, int vp_y, int vp_w, int vp_h, int src_w, int src_h)
+{
+    view *v = player_list;
+    if (!v && the_game) v = the_game->first_view;
+    if (!v) v = sbar.get_view();
+    if (!v) return;
+
+    // For test frame verification, ensure weapon 1 (Grenade Launcher) is active and has ammo
+    if (getenv("ABUSE_DUMP_FRAME"))
+    {
+        if (!v->has_weapon(1))
+        {
+            v->give_weapon(1);
+            v->add_ammo(1, 50);
+        }
+        if (v->weapon_total(0) == 0)
+        {
+            v->add_ammo(0, 100);
+        }
+    }
+
+    int sx1 = 0, sy1 = 0, sx2 = 0, sy2 = 0;
+    if (!sbar.get_area(sx1, sy1, sx2, sy2))
+    {
+        sx1 = 0;
+        sx2 = src_w > 0 ? src_w : 320;
+        sy1 = src_h > 0 ? (src_h - 32) : 168;
+        sy2 = src_h > 0 ? src_h : 200;
+    }
+
+    if (vp_w <= 0) vp_w = window_w;
+    if (vp_h <= 0) vp_h = window_h;
+    if (src_w <= 0) src_w = xres > 0 ? xres : 320;
+    if (src_h <= 0) src_h = yres > 0 ? yres : 200;
+
+    float scale_x = (float)vp_w / (float)src_w;
+    float scale_y = (float)vp_h / (float)src_h;
+
+    int bar_x = vp_x + (int)std::round(sx1 * scale_x);
+    int bar_y = vp_y + (int)std::round(sy1 * scale_y);
+    int bar_w = (int)std::round((sx2 - sx1) * scale_x);
+    int bar_h = (int)std::round((sy2 - sy1) * scale_y);
+
+    bar_x = std::clamp(bar_x, 0, m_canvas_w - 1);
+    bar_w = std::min(bar_w, m_canvas_w - bar_x);
+    bar_y = std::clamp(bar_y, 0, m_canvas_h - 1);
+    bar_h = std::min(bar_h, m_canvas_h - bar_y);
+
+    if (bar_w <= 20 || bar_h <= 10) return;
+
+    // 1. Top Industrial Ventilation Grate (from user reference y=0..160)
+    int top_grate_h = std::max(6, (int)(bar_h * 0.11f));
+    if (m_hud_top_grate.width > 0)
+    {
+        int gw = (int)(m_hud_top_grate.width * ((float)top_grate_h / (float)m_hud_top_grate.height));
+        if (gw <= 0) gw = 64;
+        for (int gx = bar_x; gx < bar_x + bar_w; gx += gw)
+        {
+            int draw_gw = std::min(gw, bar_x + bar_w - gx);
+            draw_texture(m_pixels.data(), m_canvas_w, m_canvas_h, gx, bar_y, draw_gw, top_grate_h, m_hud_top_grate, 0.90f);
+        }
+    }
+    else
+    {
+        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bar_x, bar_y, bar_w, top_grate_h, make_rgba(12, 16, 22, 255));
+    }
+
+    int chassis_y = bar_y + top_grate_h;
+    int chassis_h = bar_h - top_grate_h;
+
+    // Dark brushed titanium backing across entire status bar
+    for (int y = chassis_y; y < chassis_y + chassis_h; y++)
+    {
+        if (y < 0 || y >= m_canvas_h) continue;
+        float ty = (float)(y - chassis_y) / (float)chassis_h;
+        int base_r = (int)(28.0f - ty * 14.0f);
+        int base_g = (int)(32.0f - ty * 16.0f);
+        int base_b = (int)(38.0f - ty * 18.0f);
+        for (int x = bar_x; x < bar_x + bar_w; x++)
+        {
+            int grain = (((x * 67 + y * 13) ^ (x * 19)) & 0x07) - 3;
+            m_pixels[y * m_canvas_w + x] = make_rgba(std::clamp(base_r + grain, 0, 255),
+                                                     std::clamp(base_g + grain, 0, 255),
+                                                     std::clamp(base_b + grain, 0, 255), 255);
+        }
+    }
+
+    // 2. Health Station (Left Wing)
+    int health_x0 = bar_x;
+    int health_x1 = bar_x + (int)std::round(47.0f * scale_x);
+    int health_w = health_x1 - health_x0;
+    int health_cx = health_x0 + health_w / 2;
+    int health_cy = chassis_y + chassis_h / 2;
+    int r_outer = (int)(chassis_h * 0.44f);
+    int r_inner = r_outer - 7;
+
+    // Beveled circular steel collar
+    for (int dy = -r_outer; dy <= r_outer; dy++)
+    {
+        int py = health_cy + dy;
+        if (py < 0 || py >= m_canvas_h) continue;
+        for (int dx = -r_outer; dx <= r_outer; dx++)
+        {
+            int px = health_cx + dx;
+            if (px < 0 || px >= m_canvas_w) continue;
+            float dist = std::sqrt((float)(dx * dx + dy * dy));
+            if (dist <= r_outer)
+            {
+                if (dist > r_inner)
+                {
+                    float angle = std::atan2((float)dy, (float)dx);
+                    float light = 0.5f - 0.45f * std::cos(angle + 0.785f);
+                    uint8_t mr = static_cast<uint8_t>(std::clamp(90.0f + light * 90.0f, 35.0f, 220.0f));
+                    uint8_t mg = static_cast<uint8_t>(std::clamp(105.0f + light * 95.0f, 40.0f, 230.0f));
+                    uint8_t mb = static_cast<uint8_t>(std::clamp(120.0f + light * 100.0f, 50.0f, 240.0f));
+                    m_pixels[py * m_canvas_w + px] = make_rgba(mr, mg, mb, 255);
+                }
+                else
+                {
+                    m_pixels[py * m_canvas_w + px] = make_rgba(4, 16, 10, 255);
+                }
+            }
+        }
+    }
+
+    // 4 hex bolts at 45, 135, 225, 315 deg
+    for (int a_idx = 0; a_idx < 4; a_idx++)
+    {
+        float ang = 0.785398f + a_idx * 1.570796f;
+        int sx = health_cx + (int)(std::cos(ang) * (r_outer - 3));
+        int sy = health_cy + (int)(std::sin(ang) * (r_outer - 3));
+        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, sx - 1, sy - 1, 3, 3, make_rgba(185, 205, 225, 255));
+        if (sx >= 0 && sx < m_canvas_w && sy >= 0 && sy < m_canvas_h)
+            m_pixels[sy * m_canvas_w + sx] = make_rgba(30, 40, 50, 255);
+    }
+
+    // Health digital value
+    int hp_val = (v && v->m_focus) ? v->m_focus->hp() : 0;
+    hp_val = std::clamp(hp_val, 0, 999);
+
+    uint32_t hp_on_col = make_rgba(65, 255, 110, 255); // cyber-green
+    if (hp_val <= 25)
+        hp_on_col = make_rgba(255, 45, 45, 255); // red alert
+    else if (hp_val <= 50)
+        hp_on_col = make_rgba(255, 195, 40, 255); // amber alert
+
+    int h_seg_w = std::max(12, (int)(chassis_h * 0.13f));
+    int h_seg_h = std::max(22, (int)(chassis_h * 0.26f));
+    int h_thick = std::max(3, h_seg_w / 4);
+    int h_gap = 3;
+    int total_hp_w = h_seg_w * 3 + h_gap * 2;
+    int hp_digits_x = health_cx - total_hp_w / 2;
+    int hp_digits_y = health_cy - h_seg_h / 2 - (int)(chassis_h * 0.05f);
+
+    draw_seven_segment_number(m_pixels.data(), m_canvas_w, m_canvas_h, hp_digits_x, hp_digits_y,
+                              hp_val, 3, h_seg_w, h_seg_h, h_thick, hp_on_col, make_rgba(14, 40, 20, 80), true, false);
+
+    // Heart icon + "HEALTH" label below digits
+    int label_y = hp_digits_y + h_seg_h + 5;
+    int heart_x = health_cx - 26;
+    int heart_y = label_y + 2;
+    uint32_t heart_col = (hp_val <= 25) ? make_rgba(255, 50, 50, 255) : make_rgba(255, 75, 105, 255);
+    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, heart_x + 1, heart_y, 2, 2, heart_col);
+    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, heart_x + 4, heart_y, 2, 2, heart_col);
+    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, heart_x, heart_y + 1, 7, 3, heart_col);
+    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, heart_x + 1, heart_y + 4, 5, 1, heart_col);
+    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, heart_x + 2, heart_y + 5, 3, 1, heart_col);
+    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, heart_x + 3, heart_y + 6, 1, 1, heart_col);
+
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, heart_x + 10, label_y, "HEALTH", make_rgba(170, 215, 235, 240), 1, false);
+
+    // 3. Modular Weapon Bays (8 modular slots matching statbar.cpp mouse coordinates exactly)
+    int cur_selected = v->current_weapon;
+    int mouse_hover = sbar.get_icon_in_selection();
+
+    for (int i = 0; i < 8; i++)
+    {
+        int bx = bar_x + (int)std::round((47.0f + i * 33.0f) * scale_x);
+        int next_bx = bar_x + (int)std::round((47.0f + (i + 1) * 33.0f) * scale_x);
+        int bw = next_bx - bx;
+        if (bw <= 8) continue;
+
+        bool is_current = (cur_selected == i);
+        bool is_owned = v->has_weapon(i);
+        bool is_hovered = (mouse_hover == i);
+
+        // Draw 3D metallic modular bay chassis from reference image!
+        if (m_hud_bay_empty.width > 0)
+        {
+            float bay_bright = is_current ? 1.05f : (is_hovered ? 1.15f : 0.95f);
+            draw_texture(m_pixels.data(), m_canvas_w, m_canvas_h, bx, chassis_y, bw, chassis_h, m_hud_bay_empty, bay_bright);
+        }
+
+        // Weapon sprite inside the holster tray
+        if (is_owned)
+        {
+            int tray_x = bx + (int)(bw * 0.15f);
+            int tray_y = chassis_y + (int)(chassis_h * 0.26f);
+            int tray_w = (int)(bw * 0.70f);
+            int tray_h = (int)(chassis_h * 0.42f);
+
+            float brightness = is_current ? 1.0f : 0.90f;
+            if (i < 8 && m_hd_weapons[i].width > 0)
+            {
+                // Soft drop shadow offset +2, +2
+                draw_texture(m_pixels.data(), m_canvas_w, m_canvas_h, tray_x + 2, tray_y + 2, tray_w, tray_h, m_hd_weapons[i], 0.12f);
+                // HD weapon sprite
+                draw_texture(m_pixels.data(), m_canvas_w, m_canvas_h, tray_x, tray_y, tray_w, tray_h, m_hd_weapons[i], brightness);
+            }
+            else
+            {
+                int icon_id = is_current ? sbar.get_bweap(i) : sbar.get_dweap(i);
+                if (icon_id >= 0 && pal)
+                {
+                    image *im = cache.img(icon_id);
+                    if (im && im->Size().x > 0 && im->Size().y > 0)
+                    {
+                        int im_w = im->Size().x;
+                        int im_h = im->Size().y;
+                        float sc = std::min((float)(tray_w - 4) / (float)im_w, (float)(tray_h - 4) / (float)im_h);
+                        int fw = std::max(1, (int)(im_w * sc));
+                        int fh = std::max(1, (int)(im_h * sc));
+                        int ox = tray_x + (tray_w - fw) / 2;
+                        int oy = tray_y + (tray_h - fh) / 2;
+                        for (int dy = 0; dy < fh; dy++)
+                        {
+                            int py = oy + dy;
+                            if (py < 0 || py >= m_canvas_h) continue;
+                            int sy = (dy * im_h) / fh;
+                            const uint8_t *src_row = im->scan_line(sy);
+                            for (int dx = 0; dx < fw; dx++)
+                            {
+                                int px = ox + dx;
+                                if (px < 0 || px >= m_canvas_w) continue;
+                                int sx = (dx * im_w) / fw;
+                                uint8_t c = src_row[sx];
+                                if (c == 0) continue;
+                                uint8_t r = (uint8_t)(pal->red(c) * brightness);
+                                uint8_t g = (uint8_t)(pal->green(c) * brightness);
+                                uint8_t b = (uint8_t)(pal->blue(c) * brightness);
+                                m_pixels[py * m_canvas_w + px] = make_rgba(r, g, b, 255);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Selection highlight frame
+        if (is_hovered)
+        {
+            uint32_t hov_col = make_rgba(255, 215, 60, 240);
+            draw_frame(m_pixels.data(), m_canvas_w, m_canvas_h, bx + 1, chassis_y + 1, bw - 2, chassis_h - 2, 0, hov_col);
+        }
+        else if (is_current)
+        {
+            uint32_t act_col = make_rgba(0, 230, 255, 230);
+            draw_frame(m_pixels.data(), m_canvas_w, m_canvas_h, bx + 1, chassis_y + 1, bw - 2, chassis_h - 2, 0, act_col);
+        }
+
+        // Ammo Display inside the trapezoidal window
+        int ammo_w = (int)(bw * 0.58f);
+        int ammo_h = (int)(chassis_h * 0.20f);
+        int ammo_x = bx + (int)(bw * 0.18f);
+        int ammo_y = chassis_y + (int)(chassis_h * 0.77f);
+
+        // Slot number indicator on left side
+        char slot_num[4];
+        snprintf(slot_num, sizeof(slot_num), "%d", i + 1);
+        draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, ammo_x + 2, ammo_y + (ammo_h - 12) / 2, slot_num, make_rgba(140, 180, 205, 220), 1, false);
+
+        // 7-segment Ammo counter
+        int ammo_val = is_owned ? v->weapon_total(i) : -1;
+        if (ammo_val > 999) ammo_val = 999;
+
+        int a_seg_w = std::max(8, (int)(ammo_h * 0.36f));
+        int a_seg_h = std::max(14, (int)(ammo_h * 0.72f));
+        int a_thick = std::max(2, a_seg_w / 4);
+        int a_gap = 2;
+        int total_ammo_w = a_seg_w * 3 + a_gap * 2;
+        int ammo_digits_x = ammo_x + ammo_w - total_ammo_w - 4;
+        int ammo_digits_y = ammo_y + (ammo_h - a_seg_h) / 2;
+
+        uint32_t a_on_col = is_current ? make_rgba(65, 255, 110, 255) : make_rgba(40, 220, 90, 240);
+        uint32_t a_off_col = make_rgba(10, 32, 18, 55);
+
+        draw_seven_segment_number(m_pixels.data(), m_canvas_w, m_canvas_h, ammo_digits_x, ammo_digits_y,
+                                  ammo_val, 3, a_seg_w, a_seg_h, a_thick, a_on_col, a_off_col, is_owned, true);
+    }
+
+    // Right end cap / chassis terminator
+    int bays_end_x = bar_x + (int)std::round((47.0f + 8 * 33.0f) * scale_x);
+    if (bays_end_x < bar_x + bar_w && m_hud_bay_empty.width > 0)
+    {
+        int cap_w = bar_x + bar_w - bays_end_x;
+        draw_texture(m_pixels.data(), m_canvas_w, m_canvas_h, bays_end_x, chassis_y, cap_w, chassis_h, m_hud_bay_empty, 0.85f);
+    }
+}
+
+void RemasterHUD::draw_main_menu(int window_w, int window_h, int vp_x, int vp_y, int vp_w, int vp_h, int src_w, int src_h)
+{
+    if (vp_w <= 0) vp_w = window_w;
+    if (vp_h <= 0) vp_h = window_h;
+    if (src_w <= 0) src_w = xres > 0 ? xres : 320;
+    if (src_h <= 0) src_h = yres > 0 ? yres : 200;
+
+    float scale_x = (float)vp_w / (float)src_w;
+    float scale_y = (float)vp_h / (float)src_h;
+
+    ivec2 mpos = wm ? wm->GetMousePos() : ivec2(0, 0);
+    float win_mx = (float)vp_x + (float)mpos.x * scale_x;
+    float win_my = (float)vp_y + (float)mpos.y * scale_y;
+
+    int dock_w = std::min(380, (int)(window_w * 0.30f));
+    dock_w = std::max(280, dock_w);
+    int dock_x = window_w - dock_w;
+    int dock_h = window_h;
+
+    // Brushed titanium dock background with anisotropic micro-grain
+    for (int y = 0; y < dock_h; y++)
+    {
+        float ty = (float)y / (float)dock_h;
+        int base_r = (int)(20.0f + ty * 6.0f);
+        int base_g = (int)(26.0f + ty * 7.0f);
+        int base_b = (int)(34.0f + ty * 8.0f);
+
+        for (int x = dock_x; x < window_w; x++)
+        {
+            int grain = (((x * 67 + y * 13) ^ (x * 19)) & 0x07) - 3;
+            uint8_t r = static_cast<uint8_t>(std::clamp(base_r + grain, 0, 255));
+            uint8_t g = static_cast<uint8_t>(std::clamp(base_g + grain, 0, 255));
+            uint8_t b = static_cast<uint8_t>(std::clamp(base_b + grain, 0, 255));
+            m_pixels[y * m_canvas_w + x] = make_rgba(r, g, b, 245);
+        }
+    }
+
+    // Glowing vertical cyan neon strip along the left edge of the dock
+    for (int y = 0; y < dock_h; y++)
+    {
+        for (int hx = -3; hx <= 3; hx++)
+        {
+            int px = dock_x + hx;
+            if (px < 0 || px >= m_canvas_w) continue;
+            uint32_t neon = (hx == 0) ? make_rgba(255, 255, 255, 255)
+                                      : (std::abs(hx) == 1 ? make_rgba(100, 235, 255, 200)
+                                                           : make_rgba(0, 160, 255, 70));
+            uint32_t dst = m_pixels[y * m_canvas_w + px];
+            uint8_t a = (neon >> 24) & 0xFF;
+            float af = a / 255.0f;
+            uint8_t r = (uint8_t)((neon & 0xFF) * af + (dst & 0xFF) * (1.0f - af));
+            uint8_t g = (uint8_t)(((neon >> 8) & 0xFF) * af + ((dst >> 8) & 0xFF) * (1.0f - af));
+            uint8_t b = (uint8_t)(((neon >> 16) & 0xFF) * af + ((dst >> 16) & 0xFF) * (1.0f - af));
+            m_pixels[y * m_canvas_w + px] = make_rgba(r, g, b, 255);
+        }
+    }
+
+    // Terminal Header
+    int head_x = dock_x + 20;
+    int head_y = 16;
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, head_x, head_y, "ABUSE // 2026", make_rgba(0, 230, 255, 255), 2, true);
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, head_x, head_y + 22, "SYSTEM TERMINAL - ACCESS GRANTED", make_rgba(130, 165, 190, 220), 1, false);
+
+    // Divider line below header
+    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, head_x, head_y + 35, dock_w - 40, 1, make_rgba(0, 200, 255, 140));
+
+    // Determine buttons present (exact same order as menu.cpp)
+    struct MenuBtn {
+        int id;
+        std::string title;
+        std::string subtitle;
+        uint32_t icon_color;
+    };
+    std::vector<MenuBtn> buttons;
+
+    if (current_level)
+        buttons.push_back({ ID_RETURN, "RESUME MISSION", "RETURN TO ACTIVE COMBAT", make_rgba(0, 255, 200, 255) });
+    if (show_load_icon())
+        buttons.push_back({ ID_LOAD_PLAYER_GAME, "LOAD GAME", "RESTORE CHECKPOINT", make_rgba(100, 200, 255, 255) });
+
+    buttons.push_back({ ID_START_GAME, "START GAME", "NEW CAMPAIGN OPERATION", make_rgba(65, 255, 110, 255) });
+
+    std::string diff_str = "NORMAL";
+    if (DEFINEDP(symbol_value(l_difficulty)))
+    {
+        if (symbol_value(l_difficulty) == l_extreme) diff_str = "EXTREME";
+        else if (symbol_value(l_difficulty) == l_hard) diff_str = "HARD";
+        else if (symbol_value(l_difficulty) == l_easy) diff_str = "EASY";
+    }
+    if (!main_net_cfg || (main_net_cfg->state != net_configuration::SERVER && main_net_cfg->state != net_configuration::CLIENT))
+        buttons.push_back({ ID_NULL, "DIFFICULTY: " + diff_str, "COMBAT SIMULATION LEVEL", make_rgba(255, 200, 50, 255) });
+
+    buttons.push_back({ ID_LIGHT_OFF, "DISPLAY GAMMA", "CALIBRATE BRIGHTNESS", make_rgba(255, 175, 40, 255) });
+    buttons.push_back({ ID_VOLUME, "AUDIO SETTINGS", "SFX & MUSIC CONTROLS", make_rgba(160, 210, 255, 255) });
+    if (prot)
+        buttons.push_back({ ID_NETWORKING, "MULTIPLAYER", "LOCAL NETWORK & SERVER", make_rgba(200, 120, 255, 255) });
+    buttons.push_back({ ID_QUIT, "QUIT TO DESKTOP", "TERMINATE SIMULATION", make_rgba(255, 75, 75, 255) });
+
+    int button_h = settings.hires ? 39 : 25;
+    int total_height = (int)buttons.size() * button_h;
+    int orig_y0 = (src_h - total_height) / 2;
+
+    for (size_t i = 0; i < buttons.size(); i++)
+    {
+        int by_top = vp_y + (int)std::round((orig_y0 + (int)i * button_h) * scale_y);
+        int by_bot = vp_y + (int)std::round((orig_y0 + ((int)i + 1) * button_h) * scale_y);
+        int bh = by_bot - by_top;
+
+        int card_x = dock_x + 16;
+        int card_w = dock_w - 32;
+        int card_y = by_top + 2;
+        int card_h = bh - 4;
+
+        bool is_hover = (win_my >= by_top && win_my < by_bot && win_mx >= (window_w - dock_w));
+
+        // Button Card Chassis
+        uint32_t bg_col = is_hover ? make_rgba(35, 50, 66, 255) : make_rgba(18, 24, 32, 230);
+        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, card_x, card_y, card_w, card_h, bg_col);
+
+        // Frame
+        uint32_t frame_col = is_hover ? make_rgba(0, 240, 255, 255) : make_rgba(65, 85, 105, 180);
+        draw_frame(m_pixels.data(), m_canvas_w, m_canvas_h, card_x, card_y, card_w, card_h, 0, frame_col);
+
+        if (is_hover)
+        {
+            // Specular top highlight sheen
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, card_x + 2, card_y + 1, card_w - 4, 1, make_rgba(255, 255, 255, 140));
+            // Left neon accent bar
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, card_x + 1, card_y + 1, 4, card_h - 2, make_rgba(0, 240, 255, 255));
+        }
+
+        // Icon indicator bar on left of card
+        int icon_box_x = card_x + (is_hover ? 8 : 6);
+        int icon_box_y = card_y + (card_h - 18) / 2;
+        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, icon_box_x, icon_box_y, 4, 18, buttons[i].icon_color);
+
+        // Typography
+        uint32_t text_col = is_hover ? make_rgba(255, 255, 255, 255) : make_rgba(215, 230, 245, 240);
+        int text_x = icon_box_x + 14;
+        int title_y = card_y + (card_h > 36 ? 6 : (card_h - 14) / 2);
+        draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, text_x, title_y, buttons[i].title.c_str(), text_col, 1, is_hover);
+
+        if (card_h > 36)
+        {
+            draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, text_x, title_y + 16, buttons[i].subtitle.c_str(), make_rgba(110, 145, 175, 200), 1, false);
+        }
+    }
+}
+
 void RemasterHUD::render(int window_w, int window_h, int vp_x, int vp_y, int vp_w, int vp_h, int src_w, int src_h)
 {
     if (!m_initialized)
         return;
 
     auto &cfg = RemasterConfig::get();
+    load_all_assets();
+    update_canvas(window_w, window_h);
 
     // Update notification timer
     float alpha = 1.0f;
@@ -414,18 +1162,37 @@ void RemasterHUD::render(int window_w, int window_h, int vp_x, int vp_y, int vp_
             alpha = std::clamp(cfg.notification_timer / 0.5f, 0.0f, 1.0f);
     }
 
-    bool need_notification = (cfg.notification_timer > 0.0f && !cfg.notification_text.empty());
-    bool need_dashboard = cfg.show_hud_overlay;
-    bool need_cursor = (cfg.enabled && wm && wm->has_mouse() && wm->GetMouseVisual() != nullptr);
     view *v = player_list;
     if (!v && the_game) v = the_game->first_view;
-    bool need_pos_debug = cfg.show_pos_debug && (v != nullptr && v->m_focus != nullptr);
+    if (!v) v = sbar.get_view();
 
-    if (!need_notification && !need_dashboard && !need_cursor && !need_pos_debug)
+    bool in_play = (the_game != nullptr &&
+                    current_level != nullptr &&
+                    player_list != nullptr &&
+                    player_list->m_focus != nullptr &&
+                    (the_game->state == RUN_STATE || the_game->state == PAUSE_STATE) &&
+                    the_game->ar_state != AR_INTRO &&
+                    the_game->ar_state != AR_MAINMENU);
+    bool in_menu = (the_game != nullptr && the_game->ar_state == AR_MAINMENU);
+
+    bool need_statusbar = (cfg.enabled && in_play);
+    bool need_menu = (cfg.enabled && in_menu);
+    bool need_notification = (cfg.notification_timer > 0.0f && !cfg.notification_text.empty());
+    bool need_dashboard = cfg.show_hud_overlay && in_play;
+    bool need_cursor = (cfg.enabled && wm && wm->has_mouse() && wm->GetMouseVisual() != nullptr);
+    bool need_pos_debug = cfg.show_pos_debug && in_play && (v != nullptr && v->m_focus != nullptr);
+
+    if (!need_statusbar && !need_menu && !need_notification && !need_dashboard && !need_cursor && !need_pos_debug)
         return;
 
     // Clear canvas
     std::fill(m_pixels.begin(), m_pixels.end(), 0);
+
+    if (need_statusbar)
+        draw_hud_statusbar(window_w, window_h, vp_x, vp_y, vp_w, vp_h, src_w, src_h);
+
+    if (need_menu)
+        draw_main_menu(window_w, window_h, vp_x, vp_y, vp_w, vp_h, src_w, src_h);
 
     if (need_pos_debug)
         draw_pos_debug();

@@ -415,6 +415,26 @@ void RemasterGL::capture_screenshot(const char *filepath, int window_w, int wind
 
 static void check_dump_screenshot(int window_w, int window_h, bool in_gameplay)
 {
+    const char *dump_menu = getenv("ABUSE_DUMP_MENU");
+    if (dump_menu)
+    {
+        static int s_menu_counter = 0;
+        s_menu_counter++;
+        int target = atoi(dump_menu);
+        if (s_menu_counter >= target)
+        {
+            const char *out_path = getenv("ABUSE_DUMP_PATH");
+            std::string final_png = out_path ? out_path : "/Users/mberguer/.gemini/antigravity/brain/7829aad7-21ac-4465-ba25-1fade3429f56/test_menu.png";
+            std::string tmp_bmp = "/Users/mberguer/.gemini/antigravity/brain/7829aad7-21ac-4465-ba25-1fade3429f56/scratch/abuse_menu.bmp";
+            RemasterGL::capture_screenshot(tmp_bmp.c_str(), window_w, window_h);
+            std::string cmd = "rm -f \"" + final_png + "\" && sips -s format png \"" + tmp_bmp + "\" --out \"" + final_png + "\" >/dev/null 2>&1";
+            system(cmd.c_str());
+            printf("[RemasterGL] Captured menu frame %d to %s\n", s_menu_counter, final_png.c_str());
+            exit(0);
+        }
+        return;
+    }
+
     if (!in_gameplay) return;
     static int s_frame_counter = 0;
     s_frame_counter++;

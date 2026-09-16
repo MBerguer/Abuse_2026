@@ -45,6 +45,10 @@ class status_bar
   void need_refresh() { need_rf=1; }
   void draw_update();
   bool get_area(int &x1, int &y1, int &x2, int &y2);
+  int get_icon_in_selection() const { return icon_in_selection; }
+  view *get_view() const { return v; }
+  int get_bweap(int i) const { return (i >= 0 && i < TOTAL_WEAPONS) ? bweap[i] : -1; }
+  int get_dweap(int i) const { return (i >= 0 && i < TOTAL_WEAPONS) ? dweap[i] : -1; }
 };
 
 extern status_bar sbar;

@@ -489,6 +489,10 @@ void Game::set_state(int new_state)
 
     int old_state = state;
     state = new_state;
+    if (playing_state(state))
+        ar_state = AR_PLAY;
+    else if (state == MENU_STATE)
+        ar_state = AR_MAINMENU;
 
     pal->load();    // restore old palette
 
@@ -1251,6 +1255,7 @@ int text_draw(int y, int x1, int y1, int x2, int y2, char const *buf, JCFont *fo
 void do_title()
 {
 	//AR intro screens
+	if (the_game) the_game->ar_state = AR_INTRO;
 
 	if(cdc_logo == -1) return;
 
@@ -1404,6 +1409,7 @@ void do_title()
 
     if(title_screen >= 0)
         fade_in(cache.img(title_screen), 32);
+    if (the_game) the_game->ar_state = AR_MAINMENU;
 }
 
 extern int start_edit;
@@ -1427,6 +1433,9 @@ Game::Game(int argc, char **argv)
   top_menu = joy_win = NULL;
   old_view = first_view = NULL;
   nplayers = 1;
+  state = START_STATE;
+  ar_state = AR_INTRO;
+  ar_stateold = AR_INTRO;
 
   help_text_frames = -1;
   strcpy(help_text, "");

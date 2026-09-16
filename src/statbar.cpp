@@ -105,6 +105,7 @@ void status_bar::redraw(image *screen)
   if (total_weapons)
   {
     if (!playing_state(the_game->state)) return ;
+    if (RemasterConfig::get().enabled) return; // Rendered natively by RemasterHUD
 
     image *sb=cache.img(sbar);
 
@@ -213,6 +214,7 @@ void status_bar::draw_health(image *screen,int amount)
 {
   if (total_weapons)
   {
+    if (RemasterConfig::get().enabled) return;
     int x1,y1,x2,y2;
     area(x1,y1,x2,y2);
     draw_num(screen,x1+(small_render ? 17*2 : 17),y1+(small_render ? 11*2 : 11),amount,bnum);
@@ -224,6 +226,7 @@ void status_bar::draw_ammo(image *screen, int weapon_num, int amount, int light)
 {
   if (total_weapons)
   {
+    if (RemasterConfig::get().enabled) return;
     int x1,y1,x2,y2;
     area(x1,y1,x2,y2);
     draw_num(screen,
