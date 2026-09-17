@@ -666,8 +666,10 @@ void update_window_done()
         }
 
 
+        static bool s_was_pos_debug = false;
         if (RemasterConfig::get().show_pos_debug && in_gameplay && player_list && player_list->m_focus)
         {
+            s_was_pos_debug = true;
             extern int f_wid, f_hi;
             int px = player_list->m_focus->x;
             int py = player_list->m_focus->y;
@@ -686,6 +688,12 @@ void update_window_done()
                     SDL_SetWindowTitle(window, title_buf);
                 }
             }
+        }
+        else if (s_was_pos_debug)
+        {
+            s_was_pos_debug = false;
+            if (window)
+                SDL_SetWindowTitle(window, "Abuse 2026 Remaster");
         }
 
         int level_amb = (in_gameplay && player_list) ? player_list->ambient : 32;
