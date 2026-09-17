@@ -741,15 +741,12 @@ void main_menu()
 
   InputManager *inm = new InputManager(main_screen, list);
   inm->allow_no_selections();
-  inm->clear_current();
-
   main_screen->AddDirty(ivec2(0), ivec2(320, 200));
 
   Event ev;
   int stop_menu = 0;
   time_marker start;
   wm->flush_screen();
-  
   
   do
 	{
@@ -761,6 +758,7 @@ void main_menu()
             {
                 wm->get_event(ev);
             } while (ev.type==EV_MOUSE_MOVE && wm->IsPending());
+
             inm->handle_event(ev,NULL);
             if (ev.type==EV_KEY && ev.key==JK_ESC)
               if (current_level)
@@ -771,6 +769,28 @@ void main_menu()
                 wm->Push(new Event(ID_QUIT,NULL));
 
             menu_handler(ev,inm);
+
+            // Immediately dispatch any events pushed during this tick (e.g. EV_MESSAGE from button click)
+            while (wm->IsPending())
+            {
+                Event next_ev;
+                wm->get_event(next_ev);
+                inm->handle_event(next_ev, NULL);
+                menu_handler(next_ev, inm);
+                if (next_ev.type == EV_MESSAGE)
+                {
+                    if (next_ev.message.id == ID_START_GAME || next_ev.message.id == ID_RETURN)
+                        stop_menu = 1;
+                    else if (next_ev.message.id == ID_QUIT)
+                    {
+                        if (confirm_quit())
+                            stop_menu = 1;
+                        else
+                            start.get_time();
+                    }
+                }
+            }
+
             start.get_time();
 
             wm->flush_screen();
@@ -778,7 +798,7 @@ void main_menu()
         else
         {
             // ECS - Added so that main menu doesn't grab 100% of CPU
-            Timer tmp; tmp.WaitMs(30);
+            Timer tmp; tmp.WaitMs(15);
         }
 
         if (new_time.diff_time(&start)>10)

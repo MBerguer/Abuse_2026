@@ -79,6 +79,9 @@ void EventHandler::SysWarpMouse(ivec2 pos)
 //
 int EventHandler::IsPending()
 {
+    if (m_events.first() != NULL)
+        return 1;
+
     if (!m_pending && SDL_PollEvent(NULL))
         m_pending = 1;
 
@@ -108,6 +111,16 @@ void EventHandler::SysEvent(Event &ev)
 	// Sort the mouse out
 	int x, y;
 	uint8_t buttons = SDL_GetMouseState(&x, &y);
+	if (sdlev.type == SDL_MOUSEBUTTONDOWN || sdlev.type == SDL_MOUSEBUTTONUP)
+	{
+		x = sdlev.button.x;
+		y = sdlev.button.y;
+	}
+	else if (sdlev.type == SDL_MOUSEMOTION)
+	{
+		x = sdlev.motion.x;
+		y = sdlev.motion.y;
+	}
 
 	// Remove any padding SDL may have added
 	x -= mouse_xpad;
@@ -130,53 +143,96 @@ void EventHandler::SysEvent(Event &ev)
 		ev.mouse_move.x = m_pos.x;
 		ev.mouse_move.y = m_pos.y;
 	}
-	
-	// Left button
-	if((buttons & SDL_BUTTON(1)) && !mouse_buttons[1])
+
+	if (sdlev.type == SDL_MOUSEBUTTONDOWN)
 	{
 		ev.type = EV_MOUSE_BUTTON;
-		mouse_buttons[1] = !mouse_buttons[1];
-        ev.mouse_button |= LEFT_BUTTON;
-    }
-    else if(!(buttons & SDL_BUTTON(1)) && mouse_buttons[1])
-    {
-        ev.type = EV_MOUSE_BUTTON;
-        mouse_buttons[1] = !mouse_buttons[1];
-        ev.mouse_button &= (0xff - LEFT_BUTTON);
-    }
+		if (sdlev.button.button == SDL_BUTTON_LEFT)
+		{
+			mouse_buttons[1] = 1;
+			ev.mouse_button |= LEFT_BUTTON;
+		}
+		else if (sdlev.button.button == SDL_BUTTON_MIDDLE)
+		{
+			mouse_buttons[2] = 1;
+			ev.mouse_button |= LEFT_BUTTON | RIGHT_BUTTON;
+		}
+		else if (sdlev.button.button == SDL_BUTTON_RIGHT)
+		{
+			mouse_buttons[3] = 1;
+			ev.mouse_button |= RIGHT_BUTTON;
+		}
+	}
+	else if (sdlev.type == SDL_MOUSEBUTTONUP)
+	{
+		ev.type = EV_MOUSE_BUTTON;
+		if (sdlev.button.button == SDL_BUTTON_LEFT)
+		{
+			mouse_buttons[1] = 0;
+			ev.mouse_button &= (0xff - LEFT_BUTTON);
+		}
+		else if (sdlev.button.button == SDL_BUTTON_MIDDLE)
+		{
+			mouse_buttons[2] = 0;
+			ev.mouse_button &= (0xff - LEFT_BUTTON);
+			ev.mouse_button &= (0xff - RIGHT_BUTTON);
+		}
+		else if (sdlev.button.button == SDL_BUTTON_RIGHT)
+		{
+			mouse_buttons[3] = 0;
+			ev.mouse_button &= (0xff - RIGHT_BUTTON);
+		}
+	}
+	else
+	{
+		// Fallback state sync with GetMouseState
+		// Left button
+		if((buttons & SDL_BUTTON(1)) && !mouse_buttons[1])
+		{
+			ev.type = EV_MOUSE_BUTTON;
+			mouse_buttons[1] = !mouse_buttons[1];
+			ev.mouse_button |= LEFT_BUTTON;
+		}
+		else if(!(buttons & SDL_BUTTON(1)) && mouse_buttons[1])
+		{
+			ev.type = EV_MOUSE_BUTTON;
+			mouse_buttons[1] = !mouse_buttons[1];
+			ev.mouse_button &= (0xff - LEFT_BUTTON);
+		}
 
-    // Middle button
-    if((buttons & SDL_BUTTON(2)) && !mouse_buttons[2])
-    {
-        ev.type = EV_MOUSE_BUTTON;
-        mouse_buttons[2] = !mouse_buttons[2];
-        ev.mouse_button |= LEFT_BUTTON;
-        ev.mouse_button |= RIGHT_BUTTON;
-    }
-    else if(!(buttons & SDL_BUTTON(2)) && mouse_buttons[2])
-    {
-        ev.type = EV_MOUSE_BUTTON;
-        mouse_buttons[2] = !mouse_buttons[2];
-        ev.mouse_button &= (0xff - LEFT_BUTTON);
-        ev.mouse_button &= (0xff - RIGHT_BUTTON);
-    }
+		// Middle button
+		if((buttons & SDL_BUTTON(2)) && !mouse_buttons[2])
+		{
+			ev.type = EV_MOUSE_BUTTON;
+			mouse_buttons[2] = !mouse_buttons[2];
+			ev.mouse_button |= LEFT_BUTTON;
+			ev.mouse_button |= RIGHT_BUTTON;
+		}
+		else if(!(buttons & SDL_BUTTON(2)) && mouse_buttons[2])
+		{
+			ev.type = EV_MOUSE_BUTTON;
+			mouse_buttons[2] = !mouse_buttons[2];
+			ev.mouse_button &= (0xff - LEFT_BUTTON);
+			ev.mouse_button &= (0xff - RIGHT_BUTTON);
+		}
 
-    // Right button
-    if((buttons & SDL_BUTTON(3)) && !mouse_buttons[3])
-    {
-        ev.type = EV_MOUSE_BUTTON;
-        mouse_buttons[3] = !mouse_buttons[3];
-        ev.mouse_button |= RIGHT_BUTTON;
-    }
-    else if(!(buttons & SDL_BUTTON(3)) && mouse_buttons[3])
-    {
-        ev.type = EV_MOUSE_BUTTON;
-        mouse_buttons[3] = !mouse_buttons[3];
-        ev.mouse_button &= (0xff - RIGHT_BUTTON);
-    }
+		// Right button
+		if((buttons & SDL_BUTTON(3)) && !mouse_buttons[3])
+		{
+			ev.type = EV_MOUSE_BUTTON;
+			mouse_buttons[3] = !mouse_buttons[3];
+			ev.mouse_button |= RIGHT_BUTTON;
+		}
+		else if(!(buttons & SDL_BUTTON(3)) && mouse_buttons[3])
+		{
+			ev.type = EV_MOUSE_BUTTON;
+			mouse_buttons[3] = !mouse_buttons[3];
+			ev.mouse_button &= (0xff - RIGHT_BUTTON);
+		}
+	}
 
-    m_pos = ivec2(ev.mouse_move.x, ev.mouse_move.y);
-    m_button = ev.mouse_button;
+	m_pos = ivec2(ev.mouse_move.x, ev.mouse_move.y);
+	m_button = ev.mouse_button;
 
     // Sort out other kinds of events
     switch(sdlev.type)

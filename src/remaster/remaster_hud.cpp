@@ -1291,8 +1291,8 @@ void RemasterHUD::draw_main_menu(int window_w, int window_h, int vp_x, int vp_y,
         int card_y = by_top + 1;
         int card_h = bh - 2;
 
-        // Hover test in window space
-        bool is_hover = (win_mx >= bx_left - 4 && win_mx <= bx_right + 4 &&
+        // Hover test in window space (covers button plate, right screen edge, and left tooltip area)
+        bool is_hover = (win_mx >= bx_left - (int)(70.0f * scale_x) && win_mx <= (float)(vp_x + vp_w) &&
                          win_my >= by_top && win_my < by_bot);
         const char *force_hover = getenv("ABUSE_FORCE_HOVER_BTN");
         if (force_hover && atoi(force_hover) == (int)i)

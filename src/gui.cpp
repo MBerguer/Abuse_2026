@@ -151,9 +151,11 @@ void ico_button::area(int &x1, int &y1, int &x2, int &y2)
   y2=m_pos.y+cache.img(u)->Size().y-1;
   if (RemasterConfig::get().enabled)
   {
-    // Tighten hit area to match actual high-res button plate on the right
-    x1 = std::max(0, m_pos.x - 3);
-    x2 = m_pos.x + cache.img(u)->Size().x + 2;
+    // Provide a comfortable, generous hit area for the remaster button plate and its left tooltip
+    x1 = std::max(0, m_pos.x - 70);
+    x2 = xres - 1;
+    y1 = std::max(0, m_pos.y - 1);
+    y2 = m_pos.y + cache.img(u)->Size().y;
   }
 }
 

@@ -88,6 +88,7 @@ public:
     void Push(Event *ev)
     {
         m_events.add_end(ev);
+        m_pending = 1;
     }
 
     void SysInit();
