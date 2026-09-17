@@ -1,4 +1,4 @@
-# Abuse 2026: Remastered
+# ABUSE 2026: REMASTERED
 
 <p align="center">
   <img src="docs/images/menu_remaster.png" alt="Abuse 2026 Remaster Title Screen" width="850">
@@ -10,12 +10,26 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Render%20Pipeline-OpenGL%203.3%20Core-cyan.svg" alt="OpenGL 3.3">
-  <img src="https://img.shields.io/badge/Lighting-2D%20Raytraced%20Shadows-orange.svg" alt="Raytracing">
-  <img src="https://img.shields.io/badge/Textures-HD%20PBR%20Normal%20Maps-purple.svg" alt="PBR">
+  <img src="https://img.shields.io/badge/Render%20Pipeline-OpenGL%203.3%20Core%20Deferred-cyan.svg" alt="OpenGL 3.3">
+  <img src="https://img.shields.io/badge/Lighting-2D%20Raytraced%20Penumbra%20Shadows-orange.svg" alt="Raytracing">
+  <img src="https://img.shields.io/badge/Materials-4--Channel%20PBR%20Normal%20Maps-purple.svg" alt="PBR">
+  <img src="https://img.shields.io/badge/Physics-Normal--Aware%20Ballistics-red.svg" alt="Physics">
   <img src="https://img.shields.io/badge/Display-120%2F144Hz%2B%20Decoupled-green.svg" alt="High FPS">
   <img src="https://img.shields.io/badge/License-GPL%20%2F%20Public%20Domain-blue.svg" alt="License">
 </p>
+
+---
+
+> [!IMPORTANT]
+> ### ⚡ 2026 NEXT-GEN ENGINE: REAL-TIME 2D RAYTRACING & PBR DEFERRED PIPELINE
+> This is **NOT** a simple bilinear filter, an emulator overlay, or a flat post-processing CRT shader.
+>
+> **Abuse 2026** introduces a complete **Multi-Target G-Buffer Deferred GPU Pipeline (OpenGL 3.3 Core)** integrated directly into the native 1995 C++ engine:
+> - **Real-Time 2D Raymarched Dynamic Shadows:** Raymarching casts soft penumbra shadows across walls, floors, and catwalks in real time from tactical flashlights, muzzle flashes, and in-flight projectiles.
+> - **4-Channel PBR Normal Mapping:** High-resolution normal vectors provide tactile depth and metallic relief to diamond-plate walkways, industrial conduits, hydraulic bulkheads, and bio-growth.
+> - **Dynamic Surface-Normal Ballistics ($\vec{n}$):** Projectiles, sparks, and incandescent debris compute exact geometric collision normals ($\vec{v} \cdot \vec{n} > 0$), ricocheting outwards with zero wall or floor clipping.
+> - **Diegetic Volumetric Atmosphere & HDR Reflections:** Soft ambient light scattering, atmospheric dust, and real-time floor reflections that bring the underground facility to life.
+> - **Authentic Retro Preservation:** Switch seamlessly on the fly (<kbd>F2</kbd>) between 100% original 1995 MS-DOS VGA software rendering and modern 2026 Raytraced PBR.
 
 ---
 
@@ -25,14 +39,66 @@ In 1995, **Crack dot Com** (founded by Jonathan Clark and Dave Taylor) released 
 
 Many of us grew up clutching a ball mouse in the dark, exploring the claustrophobic corridors of a high-security underground facility infected by the horrifying mutagenic virus known as *Abuse*.
 
-**Abuse 2026** is a ground-up remaster designed for modern displays and operating systems. Rather than relying on simple bilinear upscaling or flat shaders, this project implements a true **modern rendering architecture** directly into the game's native C++ engine, giving *Abuse* the visual weight, atmosphere, and fidelity of a modern 2026 indie release without altering a single frame of the original movement, enemy AI, or level design.
+**Abuse 2026** is a passion-driven overhaul created by and for players who love this game. It delivers the atmospheric depth and tactile fidelity of a high-end modern 2026 indie release, while keeping movement, collision, timing, and enemy AI identical to the 1995 original.
+
+---
+
+## 📸 Visual Showcase: Before & After
+
+### ⚔️ In-Game Visual Contrast: 1995 Classic vs 2026 Remaster
+*Toggle between both engines live during gameplay with <kbd>F2</kbd>!*
+
+| 🕹️ Classic 1995 (Untouched MS-DOS VGA 320x200) | ⚡ Remaster 2026 (Modern PBR + 2D Raytracing) |
+|:----------------------------------------------:|:---------------------------------------------:|
+| ![Classic 1995](docs/images/classic_1995.png) | ![Remaster 2026](docs/images/remaster_2026.png) |
+| *Original 256-color palette, flat ambient light, classic statusbar.* | *Real-time raymarched shadows, metallic PBR normal maps, tactical flashlight, modular HUD.* |
+
+---
+
+### 💥 Combat in Action: Dynamic Projectile Lighting & Muzzle Flash
+<p align="center">
+  <img src="docs/images/combat_shooting.png" alt="Combat Live Shooting Action" width="850"><br>
+  <em>Active combat: Rocket launcher discharge producing dynamic muzzle flash, illuminating background conduits and piping in real time as projectiles streak through the dark corridors.</em>
+</p>
+
+---
+
+### 💥 High-Speed Ballistics & Surface-Normal Ricochet
+*Explosion shockwaves, incandescent shrapnel, and sparks dynamically calculate surface normals ($\vec{n}$) with zero floor clipping.*
+
+| Instant Shockwave & 360° Sparks | Normal-Aware Ramp Bounce Physics |
+|:-------------------------------:|:--------------------------------:|
+| ![Explosion Particles](docs/images/explosion_particles.png) | ![Ramp Ricochet Normal](docs/images/ramp_ricochet_normal.png) |
+| *Rapid explosive expansion, incandescent falling shrapnel, and audited soft ambient lighting.* | *Spherical shockwave and ballistic sparks reflected along the exact 45° normal of the catwalk ramp.* |
+
+---
+
+### 🎨 Authentic Gemini HD Title Screen & Button Plates
+*The iconic 1995 menu composition restored with high-definition industrial hardware button plates generated with Gemini 2.5 Flash.*
+
+| Remastered Title Screen | Interactive Holographic Tooltips |
+|:-----------------------:|:--------------------------------:|
+| ![Remastered Menu](docs/images/menu_remaster.png) | ![Hover Tooltip](docs/images/menu_hover_tooltip.png) |
+
+<p align="center">
+  <img src="docs/images/menu_buttons_showcase.png" alt="Gemini HD Button Plates Showcase" width="850"><br>
+  <em>High-definition button plate array: Start Game, Difficulty, Display Gamma, Audio Settings, Save/Load, Multiplayer, Resume Mission, and Quit.</em>
+</p>
+
+---
+
+### 🎛️ Modular 3D Metallic Statusbar Dashboard
+<p align="center">
+  <img src="docs/images/modular_hud.png" alt="Modular Statusbar HUD" width="850"><br>
+  <em>8 dedicated modular weapon bays with illuminated weapon silhouettes, glowing active selection frames, digital 7-segment LED ammo counters, and integrated biometric suit vitals monitor.</em>
+</p>
 
 ---
 
 ## ✨ Key Remaster Features
 
 ### 💡 1. Modern 2D Deferred GPU Pipeline & Raytracing
-- **Multi-Target G-Buffer:** Renders native 1995 sprite geometry into high-precision Albedo, Normal, and Emission/Material buffers.
+- **Multi-Target G-Buffer:** Renders native sprite geometry into high-precision Albedo, Normal, and Emission/Material buffers.
 - **2D Raymarched Dynamic Shadows:** Real-time penumbra filtering with distance-attenuated soft shadows casting from the player's tactical flashlight, muzzle flashes, and alien biosensors.
 - **Normal Mapping (PBR Relief):** Deep tactile relief across industrial metal bulkheads, diamond-plate catwalks, ventilation grills, and alien bio-growth.
 - **Volumetric Fog & Scattering:** Atmospheric dust scattering, light shafts (*god rays*), and cinematic haze.
@@ -40,8 +106,8 @@ Many of us grew up clutching a ball mouse in the dark, exploring the claustropho
 - **Audited Lighting Levels:** Balanced, delicate cinematic lighting. No blown-out flares or radioactive green washes — dark, brooding, and atmospheric.
 
 ### 💥 2. Dynamic Ballistics & Normal-Aware Particles
-- **Surface Normal Detection ($\\vec{n}$):** Colisiones contra rampas a 45°, paredes, pisos y techos detectan la inclinación vectorial exacta de la superficie.
-- **Zero Wall Penetration:** Cono de dispersión confinado estrictamente al hemisferio exterior ($\\vec{v} \\cdot \\vec{n} > 0$) con desfase de eyección de 2.5 px para erradicar cualquier partícula que atraviese la geometría.
+- **Surface Normal Detection ($\vec{n}$):** Colisiones contra rampas a 45°, paredes, pisos y techos detectan la inclinación vectorial exacta de la superficie.
+- **Zero Wall Penetration:** Cono de dispersión confinado estrictamente al hemisferio exterior ($\vec{v} \cdot \vec{n} > 0$) con desfase de eyección de 2.5 px para erradicar cualquier partícula que atraviese la geometría.
 - **Incandescent Shrapnel & Debris:** Metralla balística pesada con física de gravedad acelerada y rebote elástico que choca contra rampas y pisos, enfriándose de amarillo incandescente a rojo brasa.
 - **Ultra-Fast Dynamics:** Animaciones y tiempos de vida reducidos un 75% para una respuesta visceral, rápida e hiperreactiva.
 
@@ -71,34 +137,9 @@ Many of us grew up clutching a ball mouse in the dark, exploring the claustropho
 
 ---
 
-## 📸 Visual Showcase: Before & After
-
-### Main Menu Restoration (Original Composition with Gemini HD Plates)
-| Remastered Title Screen | Hover State & Holographic Tooltip |
-|:-----------------------:|:--------------------------------:|
-| ![Remastered Menu](docs/images/menu_remaster.png) | ![Hover Tooltip](docs/images/menu_hover_tooltip.png) |
-
-### In-Game Visual Comparison (1995 Original vs 2026 Remaster)
-| Classic 1995 (VGA 320x200) | Remaster 2026 (PBR + 2D Raytracing) |
-|:--------------------------:|:-----------------------------------:|
-| ![Classic 1995](docs/images/classic_1995.png) | ![Remaster 2026](docs/images/remaster_2026.png) |
-
-### Ballistics & Lighting Showcase
-| Tactical Flashlight & Volumetric Atmosphere | Rapid Explosions & Incandescent Shrapnel |
-|:-------------------------------------------:|:---------------------------------------:|
-| ![Flashlight PBR](docs/images/gameplay_flashlight_pbr.png) | ![Explosion Particles](docs/images/explosion_particles.png) |
-
-### Surface Normal Ricochet (Physics on Inclined Ramps)
-<p align="center">
-  <img src="docs/images/ramp_ricochet_normal.png" alt="Ramp Ricochet Physics" width="800"><br>
-  <em>Sparks and incandescent debris calculate the exact inclined normal vector of angled ramps, bouncing outward with zero geometry clipping.</em>
-</p>
-
----
-
 ## 🚀 Quickstart: Clone & Play in 60 Seconds
 
-The repository is pre-configured for a pristine, out-of-the-box experience (debug modes are disabled by default).
+The repository is pre-configured for a pristine, out-of-the-box experience (debug modes and on-screen metrics are disabled by default).
 
 ### 🍎 macOS
 
@@ -156,6 +197,7 @@ cmake --install build
 | **Fire Weapon** | <kbd>Left Mouse Button</kbd> |
 | **Special Power (Boots / Speed / Cloak)** | <kbd>Right Mouse Button</kbd> |
 | **Next / Previous Weapon** | <kbd>Mouse Scroll</kbd>, <kbd>E</kbd> / <kbd>Q</kbd>, or <kbd>1</kbd>–<kbd>7</kbd> |
+| **Tactical Flashlight (On/Off)** | <kbd>Shift</kbd> |
 | **Quick Save (at save consoles)** | <kbd>F5</kbd> |
 | **Quick Load** | <kbd>F9</kbd> |
 | **Pause Game** | <kbd>P</kbd> |
@@ -164,11 +206,12 @@ cmake --install build
 ### Hotkeys & Engine Toggles
 | Key | Function |
 |:---|:---|
-| <kbd>F2</kbd> | **Cycle Render Modes:** Classic 1995 VGA $\\leftrightarrow$ Classic + RT $\\leftrightarrow$ Next-Gen HD PBR |
+| <kbd>F2</kbd> | **Cycle Render Modes:** Classic 1995 VGA $\leftrightarrow$ Classic + RT $\leftrightarrow$ Next-Gen HD PBR |
 | <kbd>F3</kbd> | **Toggle 2D Raytraced Shadows** (On / Off) |
 | <kbd>F4</kbd> | **Toggle Normal Mapping Depth** (On / Off) |
 | <kbd>F6</kbd> | **Toggle CRT Curvature & Scanlines Shader** |
 | <kbd>F7</kbd> | **Toggle High-FPS Simulation Decoupling** (120/144Hz+) |
+| <kbd>F8</kbd> | **Toggle Tactical Flashlight** |
 | <kbd>F10</kbd> | **Toggle Positional & Tile Debug HUD** (Off by default) |
 | <kbd>F11</kbd> | **Capture High-Resolution Screenshot** |
 | <kbd>F12</kbd> | **Toggle 3D Modular Statusbar Dashboard** |
@@ -198,7 +241,7 @@ volume_music=90       ; MIDI Volume (0-127)
 
 **Abuse 2026 is an active, open-source community effort, and help is warmly welcomed!**
 
-Whether you are a C++ programmer, OpenGL graphics shader wizard, pixel artist, 3D modeler, level designer, or retro gaming enthusiast, there is plenty of exciting work ahead.
+Many of us grew up with this groundbreaking game, and the goal of this project is to preserve and celebrate its legacy for the next 30 years. Whether you are a C++ programmer, OpenGL graphics shader wizard, pixel artist, 3D modeler, level designer, or retro gaming enthusiast, there is plenty of exciting work ahead.
 
 ### 🗺️ Future Roadmap & Open Opportunities
 - [ ] **Interactive Save Terminal Remaster (`AR_LOADSAVE`):** Modernizing the in-game wall terminals into high-definition diegetic consoles with CRT previews and sleek slot selectors.

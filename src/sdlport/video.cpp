@@ -595,7 +595,7 @@ void update_window_done()
                 player_list->xoff(), player_list->yoff(), xres, yres,
                 p_screen.x, p_screen.y,
                 aim_screen.x, aim_screen.y,
-                player_list->b1_suggestion != 0,
+                player_list->b2_suggestion != 0,
                 out_dir_x, out_dir_y,
                 m_screen.x, m_screen.y,
                 flashlight_on

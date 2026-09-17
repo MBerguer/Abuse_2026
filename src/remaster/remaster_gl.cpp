@@ -465,7 +465,7 @@ static void check_dump_screenshot(int window_w, int window_h, bool in_gameplay)
     }
 }
 
-void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, int window_w, int window_h)
+void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, int window_w, int window_h, bool in_gameplay)
 {
     auto &cfg = RemasterConfig::get();
 
@@ -510,10 +510,11 @@ void RemasterGL::render_classic(const void *pixel_data, int src_w, int src_h, in
 
     render_quad();
 
-    // Remaster HUD & Notification pass
-    RemasterHUD::get().render(window_w, window_h, vp_x, vp_y, vp_w, vp_h, src_w, src_h);
+    // Remaster HUD & Notification pass (only if enabled)
+    if (cfg.enabled)
+        RemasterHUD::get().render(window_w, window_h, vp_x, vp_y, vp_w, vp_h, src_w, src_h);
 
-    check_dump_screenshot(window_w, window_h, false);
+    check_dump_screenshot(window_w, window_h, in_gameplay);
 }
 
 void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int window_w, int window_h,
@@ -527,7 +528,7 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
 
     if (!cfg.enabled || !in_gameplay)
     {
-        render_classic(pixel_data, src_w, src_h, window_w, window_h);
+        render_classic(pixel_data, src_w, src_h, window_w, window_h, in_gameplay);
         return;
     }
 

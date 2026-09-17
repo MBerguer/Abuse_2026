@@ -155,12 +155,12 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
             add_point_light(mx, my, 0.025f,
                             1.0f, 0.98f, 0.95f,
                             0.025f, 0.55f);
+        }
 
-            // 2c. Dynamic muzzle flash burst when firing (anchored right at muzzle tip)
-            if (player_firing)
-            {
-                add_point_light(mx, my, 0.04f, 1.0f, 0.88f, 0.40f, 0.20f, 1.6f);
-            }
+        // 2c. Dynamic muzzle flash burst when firing (anchored right at muzzle tip)
+        if (player_firing)
+        {
+            add_point_light(mx, my, 0.04f, 1.0f, 0.88f, 0.40f, 0.22f, 1.7f);
         }
     }
 

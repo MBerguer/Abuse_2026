@@ -377,6 +377,14 @@ void view::get_input()
                 sug_b2 = 1;
             if(last_demo_mbut & 2)
                 sug_b1 = 1;
+
+            if (getenv("ABUSE_SIMULATE_FIRE"))
+            {
+                sug_b2 = 1;
+                int off_x = getenv("ABUSE_AIM_OFFSET_X") ? atoi(getenv("ABUSE_AIM_OFFSET_X")) : 140;
+                int off_y = getenv("ABUSE_AIM_OFFSET_Y") ? atoi(getenv("ABUSE_AIM_OFFSET_Y")) : -20;
+                sug_p = ivec2(m_focus->x + off_x, m_focus->y + off_y);
+            }
         }
     }
 
@@ -925,6 +933,15 @@ void view::reset_player()
     if (total_weapons)
       weapons[0]=0;  // give him the first weapon
     current_weapon=0;
+
+    if (getenv("ABUSE_GIVE_ALL"))
+    {
+      for (int i = 0; i < total_weapons - 1; i++) weapons[i] = 999;
+    }
+    if (getenv("ABUSE_SET_WEAPON"))
+    {
+      current_weapon = atoi(getenv("ABUSE_SET_WEAPON"));
+    }
 
     memset(m_focus->lvars,0,figures[m_focus->otype]->tv*4);
     m_focus->set_aistate(0);
