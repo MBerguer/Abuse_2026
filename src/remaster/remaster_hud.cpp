@@ -1167,13 +1167,10 @@ void RemasterHUD::render(int window_w, int window_h, int vp_x, int vp_y, int vp_
     if (!v) v = sbar.get_view();
 
     bool in_play = (the_game != nullptr &&
-                    current_level != nullptr &&
-                    player_list != nullptr &&
-                    player_list->m_focus != nullptr &&
                     (the_game->state == RUN_STATE || the_game->state == PAUSE_STATE) &&
-                    the_game->ar_state != AR_INTRO &&
-                    the_game->ar_state != AR_MAINMENU);
-    bool in_menu = (the_game != nullptr && the_game->ar_state == AR_MAINMENU);
+                    current_level != nullptr &&
+                    v != nullptr);
+    bool in_menu = (the_game != nullptr && the_game->state == MENU_STATE);
 
     bool need_statusbar = (cfg.enabled && in_play);
     bool need_menu = (cfg.enabled && in_menu);

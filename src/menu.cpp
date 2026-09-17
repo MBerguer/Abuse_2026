@@ -846,7 +846,10 @@ void main_menu()
         the_game->end_session();
 
 	//AR let me know we leaving
-	the_game->ar_state = the_game->ar_stateold;
+	if (the_game && playing_state(the_game->state))
+		the_game->ar_state = AR_PLAY;
+	else if (the_game)
+		the_game->ar_state = the_game->ar_stateold;
 	if(settings.ctr_aim) wm->SetMousePos(ivec2(old_mx,old_my));//put mouse where it was on entering
 	//
 }
