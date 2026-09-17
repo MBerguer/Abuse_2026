@@ -15,6 +15,8 @@
 #include "common.h"
 #include <cmath>
 #include "remaster/remaster_config.h"
+#include "remaster/remaster_particles.h"
+#include "palette.h"
 
 #include "lisp.h"
 #include "lisp_gc.h"
@@ -1154,14 +1156,29 @@ void *sgun_ai()
            who->get_object(0)->aistate()==0))
   {
     o->lvars[sgb_lifetime]=0;
-    game_object *n=create(S_EXPLODE5,o->x+jrand()%4,o->y+jrand()%4);
-    current_level->add_object(n);
+    if (RemasterConfig::get().enabled)
+    {
+      int p_type = 0;
+      extern class palette *pal;
+      if (pal && pal->red(o->lvars[sgb_bright_color]) > 200 && pal->green(o->lvars[sgb_bright_color]) < 60)
+        p_type = 2; // red laser
+      RemasterParticles::get().spawn_bullet_impact((float)o->x, (float)o->y, (float)ang, p_type);
+    }
+    else
+    {
+      game_object *n=create(S_EXPLODE5,o->x+jrand()%4,o->y+jrand()%4);
+      current_level->add_object(n);
+    }
   } else if (who && figures[who->otype]->get_cflag(CFLAG_HURTABLE))
   {
     o->lvars[sgb_lifetime]=0;
+    if (RemasterConfig::get().enabled)
+    {
+      RemasterParticles::get().spawn_flesh_impact((float)o->x, (float)o->y, (float)ang);
+    }
     game_object *n=create(S_EXPLODE3,o->x+jrand()%4,o->y+jrand()%4);
     current_level->add_object(n);
-     who->do_damage(5,o,o->x,o->y,(lisp_cos(ang)*10)>>16,(lisp_sin(ang)*10)>>16);
+    who->do_damage(5,o,o->x,o->y,(lisp_cos(ang)*10)>>16,(lisp_sin(ang)*10)>>16);
   }
   return true_symbol;
 }

@@ -3,6 +3,7 @@
 #include "light.h"
 #include "objects.h"
 #include "level.h"
+#include "remaster_particles.h"
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -295,6 +296,23 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
                     add_point_light(ox, oy, 0.04f, 0.30f, 0.85f, 0.95f, 0.09f, 1.1f);
                 }
             }
+        }
+
+        // 3a. Dynamic light bursts from RemasterParticles (bullet impacts, explosions, etc.)
+        for (const auto &lb : RemasterParticles::get().get_light_bursts())
+        {
+            if (m_lights.size() >= MAX_LIGHTS)
+                break;
+
+            float lx = (float)(lb.x - camera_x) / (float)view_w;
+            float ly = (float)(lb.y - camera_y) / (float)view_h;
+            float rad = (float)lb.radius / (float)view_w;
+
+            if (lx + rad < 0.0f || lx - rad > 1.0f ||
+                ly + rad < 0.0f || ly - rad > 1.0f)
+                continue;
+
+            add_point_light(lx, ly, 0.05f, lb.r, lb.g, lb.b, rad, lb.intensity);
         }
     }
 

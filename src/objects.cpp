@@ -13,6 +13,8 @@
 #endif
 
 #include "common.h"
+#include "compiled.h"
+#include "remaster/remaster_config.h"
 
 #include "transimage.h"
 #include "objects.h"
@@ -730,6 +732,9 @@ void game_object::draw_predator()
 
 void game_object::drawer()
 {
+  if (RemasterConfig::get().enabled && otype == S_EXPLODE5)
+    return;
+
   if (morph_status())
   {
     morph_status()->draw(this,current_view);

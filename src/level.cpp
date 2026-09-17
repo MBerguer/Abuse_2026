@@ -41,6 +41,8 @@
 #include "nfserver.h"
 #include "lisp_gc.h"
 #include "remaster/remaster_timing.h"
+#include "remaster/remaster_config.h"
+#include "remaster/remaster_particles.h"
 
 level *current_level;
 
@@ -120,10 +122,12 @@ level::~level()
   if (block_list) free(block_list);
   if (all_block_list) free(all_block_list);
   if (first_name) free(first_name);
+  RemasterParticles::get().clear();
 }
 
 void level::restart()
 {
+  RemasterParticles::get().clear();
   view *f;
   game_object *found=NULL,*o;
   f=the_game->first_view;
@@ -756,6 +760,8 @@ int level::tick()
 
   }
   tick_panims();
+  if (RemasterConfig::get().enabled)
+    RemasterParticles::get().tick();
 
   check_collisions();
 //  wall_push();
@@ -2418,6 +2424,33 @@ level::level(int width, int height, char const *name)
 
 void level::add_object(game_object *new_guy)
 {
+  if (RemasterConfig::get().enabled && new_guy && new_guy->otype >= 0 &&
+      new_guy->otype < total_objects && object_names && object_names[new_guy->otype])
+  {
+    const char *oname = object_names[new_guy->otype];
+    if (strcmp(oname, "EXPLODE1") == 0)
+    {
+      RemasterParticles::get().spawn_explosion((float)new_guy->x, (float)new_guy->y, 0);
+    }
+    else if (strcmp(oname, "EXPLODE8") == 0)
+    {
+      RemasterParticles::get().spawn_explosion((float)new_guy->x, (float)new_guy->y, 1);
+    }
+    else if (strcmp(oname, "EXPLODE3") == 0 || strcmp(oname, "EXPLODE2") == 0 ||
+             strcmp(oname, "EXPLODE6") == 0 || strcmp(oname, "EXPLODE7") == 0)
+    {
+      RemasterParticles::get().spawn_small_explosion((float)new_guy->x, (float)new_guy->y);
+    }
+    else if (strcmp(oname, "EXPLODE5") == 0)
+    {
+      RemasterParticles::get().spawn_bullet_impact((float)new_guy->x, (float)new_guy->y, 0.0f, 0);
+    }
+    else if (strcmp(oname, "SMALL_LIGHT_CLOUD") == 0)
+    {
+      RemasterParticles::get().spawn_smoke_trail((float)new_guy->x, (float)new_guy->y, 0.0f, 0.0f);
+    }
+  }
+
   total_objs++;
   new_guy->next=NULL;
   if (figures[new_guy->otype]->get_cflag(CFLAG_ADD_FRONT))

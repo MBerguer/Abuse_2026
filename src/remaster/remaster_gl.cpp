@@ -1,10 +1,11 @@
+#include "common.h"
 #include "remaster_gl.h"
 #include "remaster_shaders.h"
 #include "remaster_config.h"
 #include "remaster_lighting.h"
 #include "remaster_hud.h"
 #include "remaster_hd.h"
-#include "common.h"
+#include "remaster_particles.h"
 #include "image.h"
 #include "file_utils.h"
 #include "loader2.h"
@@ -277,6 +278,8 @@ bool RemasterGL::init(int screen_w, int screen_h)
             }
         }
 
+    RemasterParticles::get().init();
+
     s_initialized = true;
     std::cout << "[RemasterGL] Initialized Modern 2D Deferred GPU Pipeline (GL 3.3 Core)." << std::endl;
     return true;
@@ -286,6 +289,7 @@ void RemasterGL::shutdown()
 {
     if (!s_initialized) return;
 
+    RemasterParticles::get().shutdown();
     RemasterHUD::get().cleanup();
     RemasterHD::get().cleanup();
 
@@ -730,6 +734,23 @@ void RemasterGL::render_frame(const void *pixel_data, int src_w, int src_h, int 
     }
 
     render_quad();
+
+    // 3b. Particles Layer: Render particles onto lit scene and into emission buffer
+    if (in_gameplay)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, s_lit_fbo);
+        RemasterParticles::get().render_all(cam_x, cam_y, (float)src_w, (float)src_h, s_fbo_w, s_fbo_h);
+
+        if (cfg.bloom)
+        {
+            glBindFramebuffer(GL_FRAMEBUFFER, s_gbuffer_fbo);
+            GLenum emDraw = GL_COLOR_ATTACHMENT2;
+            glDrawBuffers(1, &emDraw);
+            RemasterParticles::get().render_emissive(cam_x, cam_y, (float)src_w, (float)src_h, s_fbo_w, s_fbo_h);
+            GLenum allDraw[4] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3};
+            glDrawBuffers(4, allDraw);
+        }
+    }
 
     // 4. Bloom Pass: Ping-Pong Blur on Emission
     if (cfg.bloom)
