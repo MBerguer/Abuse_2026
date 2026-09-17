@@ -206,7 +206,22 @@ bool RemasterHD::init()
         }
     }
 
-    std::cerr << "[RemasterHD] Warning: tiles_pbr.bin not found. HD PBR pipeline disabled." << std::endl;
+    // Auto-generate on first run if missing
+    std::cout << "[RemasterHD] PBR cache not found. Auto-synthesizing from AI master materials..." << std::endl;
+    int gen_res = system("python3 scripts/reconstruct_hd_ai.py > /dev/null 2>&1");
+    (void)gen_res;
+    for (const auto &path : candidate_paths)
+    {
+        if (load_binary_pack(path))
+        {
+            m_ready = true;
+            std::cout << "[RemasterHD] Successfully initialized Next-Gen 4-Channel PBR Pipeline ("
+                      << m_loaded_tiles << " HD tiles loaded from " << path << ")." << std::endl;
+            return true;
+        }
+    }
+
+    std::cerr << "[RemasterHD] Warning: tiles_pbr.bin not found and could not be generated. HD PBR pipeline disabled." << std::endl;
     return false;
 }
 
