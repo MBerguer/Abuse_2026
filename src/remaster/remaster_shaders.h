@@ -555,7 +555,7 @@ void main()
             // Hazard light on catwalk underside (tile 83)
             if (tile_id_fg == 83 && tile_local.y > 10.5 && col.g > 0.30)
             {
-                gEmission = vec4(col.rgb * 3.0, 1.0);
+                gEmission = vec4(col.rgb * 0.70, 1.0);
             }
         }
         else if (layer == 2.0)
@@ -580,7 +580,7 @@ void main()
             // Warning panels & screens in alcove
             col.rgb = mix(col.rgb, ai_rgb, 0.65);
             bool is_led = (ai_rgb.r > 0.55 && ai_rgb.g > 0.35 && ai_rgb.b < 0.20) || (ai_rgb.g > 0.50 && ai_rgb.b > 0.50);
-            if (is_led) gEmission = vec4(ai_rgb * 2.5, 1.0);
+            if (is_led) gEmission = vec4(ai_rgb * 0.75, 1.0);
             roughness = 0.18;
             metallic = 0.40;
         }
@@ -673,9 +673,21 @@ void main()
     bool isConsoleScreen = (col.g > 0.50 && col.b > 0.50 && col.r < 0.45);
     bool isSensorLED = (col.r > 0.70 && col.g < 0.25 && col.b < 0.25) || (col.g > 0.70 && col.r < 0.30 && col.b < 0.30);
 
-    if (lum > 0.85 || isLaser || isPlasma || isElectric || isHot || isConsoleScreen || isSensorLED)
+    if (isLaser || isPlasma)
     {
-        gEmission = vec4(col.rgb * 2.0, 1.0);
+        gEmission = vec4(col.rgb * 1.30, 1.0);
+    }
+    else if (isHot || isElectric)
+    {
+        gEmission = vec4(col.rgb * 1.05, 1.0);
+    }
+    else if (isConsoleScreen || isSensorLED)
+    {
+        gEmission = vec4(col.rgb * 0.65, 1.0);
+    }
+    else if (lum > 0.92)
+    {
+        gEmission = vec4(col.rgb * 0.50, 1.0);
     }
     else
     {
@@ -861,11 +873,11 @@ void main()
                 float haze = 0.90 + 0.20 * dust;
 
                 // Translucent volumetric shaft (no blinding white wash, elegant soft degradé)
-                total_volumetric += light.color * (mie * 0.095 * haze) * shadow;
+                total_volumetric += light.color * (mie * 0.045 * haze) * shadow;
             }
             else
             {
-                total_volumetric += light.color * light.intensity * atten * shadow * 0.035;
+                total_volumetric += light.color * light.intensity * atten * shadow * 0.016;
             }
         }
 
@@ -888,7 +900,7 @@ void main()
         total_specular += light_contrib * spec * spec_tint * (0.25 + metallic * 0.75 + water * 1.5);
     }
 
-    vec3 final_color = albedo.rgb * total_diffuse + total_specular + emission + total_volumetric;
+    vec3 final_color = albedo.rgb * total_diffuse + total_specular + emission * 0.65 + total_volumetric;
 
     // Filmic Tone Mapping (rich deep blacks, high dynamic contrast like modern PS5 engines)
     vec3 mapped = final_color / (final_color + vec3(0.55)) * 1.12;

@@ -26,9 +26,9 @@ struct RemasterConfig
     bool crt_filter = false;         // Retro CRT curvature & scanline filter
 
     int shadow_quality = 2;          // 0: Off, 1: Fast (16 steps), 2: High (32 steps)
-    float light_intensity = 1.2f;    // Dynamic light multiplier
-    float ambient_intensity = 0.42f;  // Ambient light level (calibrated high-contrast sci-fi base)
-    float bloom_intensity = 0.55f;   // Bloom strength
+    float light_intensity = 0.88f;   // Dynamic light multiplier (calibrated for delicate, cinematic lighting)
+    float ambient_intensity = 0.42f; // Ambient light level (calibrated high-contrast sci-fi base)
+    float bloom_intensity = 0.38f;   // Bloom strength (subtle high-end glow, non-blinding)
     float normal_strength = 1.0f;    // Normal map depth strength
 
     // On-screen notification

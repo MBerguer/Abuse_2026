@@ -337,39 +337,40 @@ void RemasterParticles::spawn_bullet_impact(float x, float y, float angle_deg, i
     float base_angle_rad = (angle_deg + 180.0f) * 3.14159265f / 180.0f;
 
     // 28-38 glowing sparks
-    int num_sparks = 30 + (std::rand() % 9);
+    // 28-38 glowing sparks with energetic ricochet velocity
+    int num_sparks = 28 + (std::rand() % 8);
     for (int i = 0; i < num_sparks; i++)
     {
-        float spread = frand_range(-1.10f, 1.10f); // ~63 degree cone
+        float spread = frand_range(-1.05f, 1.05f); // ~60 degree cone
         float spark_ang = base_angle_rad + spread;
-        float speed = frand_range(4.5f, 13.5f);
+        float speed = frand_range(6.5f, 18.0f); // Faster, snappy ricochet
         float vx = std::cos(spark_ang) * speed;
         float vy = -std::sin(spark_ang) * speed; // screen Y is inverted in Abuse
-        float life = frand_range(16.0f, 34.0f);
+        float life = frand_range(10.0f, 22.0f);
         add_spark(x, y, vx, vy, life, palette);
     }
 
     // Small impact smoke wisps
     for (int i = 0; i < 3; i++)
     {
-        float vx = frand_range(-0.5f, 0.5f);
-        float vy = frand_range(-0.8f, -0.2f);
-        float life = frand_range(18.0f, 32.0f);
-        add_smoke(x, y, vx, vy, 2.5f, 8.5f, life, 0.35f, 0.35f, 0.38f, 0.35f);
+        float vx = frand_range(-0.6f, 0.6f);
+        float vy = frand_range(-1.0f, -0.2f);
+        float life = frand_range(14.0f, 24.0f);
+        add_smoke(x, y, vx, vy, 2.0f, 7.5f, life, 0.35f, 0.35f, 0.38f, 0.28f);
     }
 
-    // Dynamic light flash in real-time raytracing
+    // Delicate dynamic light flash in real-time raytracing (tasteful, non-blinding)
     if (palette == 1) // Plasma cyan
     {
-        add_light_burst(x, y, 0.25f, 0.85f, 1.0f, 80.0f, 3.4f, 4.0f);
+        add_light_burst(x, y, 0.20f, 0.80f, 0.98f, 48.0f, 1.35f, 3.0f);
     }
     else if (palette == 2) // Red laser
     {
-        add_light_burst(x, y, 1.0f, 0.20f, 0.15f, 75.0f, 3.2f, 4.0f);
+        add_light_burst(x, y, 0.95f, 0.22f, 0.16f, 42.0f, 1.25f, 3.0f);
     }
     else // Standard bullet/laser amber-gold
     {
-        add_light_burst(x, y, 1.0f, 0.90f, 0.50f, 80.0f, 3.4f, 4.0f);
+        add_light_burst(x, y, 0.98f, 0.85f, 0.45f, 45.0f, 1.30f, 3.0f);
     }
 }
 
@@ -381,17 +382,17 @@ void RemasterParticles::spawn_flesh_impact(float x, float y, float angle_deg)
     int num_splatters = 18 + (std::rand() % 8);
     for (int i = 0; i < num_splatters; i++)
     {
-        float spread = frand_range(-1.2f, 1.2f);
+        float spread = frand_range(-1.1f, 1.1f);
         float ang = base_angle_rad + spread;
-        float speed = frand_range(2.5f, 9.0f);
+        float speed = frand_range(4.0f, 12.0f);
         float vx = std::cos(ang) * speed;
         float vy = -std::sin(ang) * speed;
-        float life = frand_range(14.0f, 26.0f);
+        float life = frand_range(10.0f, 20.0f);
         add_spark(x, y, vx, vy, life, 3); // palette 3 = flesh/blood
     }
 
     // Dark crimson mist puff
-    add_smoke(x, y, 0.0f, -0.3f, 3.5f, 11.0f, 22.0f, 0.50f, 0.05f, 0.05f, 0.45f);
+    add_smoke(x, y, 0.0f, -0.3f, 3.0f, 9.0f, 16.0f, 0.45f, 0.06f, 0.06f, 0.35f);
 }
 
 void RemasterParticles::spawn_explosion(float x, float y, int type)
@@ -407,113 +408,111 @@ void RemasterParticles::spawn_explosion(float x, float y, int type)
 
     if (!duplicate)
     {
-        // 1. Expanding Shockwave ring (crisp, radiant energy wave)
+        // 1. Expanding Shockwave ring (fast, punchy supersonic wave)
         if (type == 1) // Energy / DFRIS
         {
-            add_shockwave(x, y, 75.0f, 14.0f, 0.6f, 0.95f, 1.0f);
-            add_light_burst(x, y, 0.5f, 0.95f, 1.0f, 190.0f, 5.0f, 18.0f);
+            add_shockwave(x, y, 80.0f, 8.0f, 0.5f, 0.90f, 1.0f);
+            add_light_burst(x, y, 0.45f, 0.88f, 1.0f, 140.0f, 2.2f, 8.0f);
         }
         else // Fiery Grenade / Rocket
         {
-            add_shockwave(x, y, 85.0f, 15.0f, 1.4f, 0.95f, 0.40f);
-            add_light_burst(x, y, 1.0f, 0.72f, 0.20f, 210.0f, 5.0f, 20.0f);
+            add_shockwave(x, y, 92.0f, 8.0f, 1.15f, 0.85f, 0.35f);
+            add_light_burst(x, y, 1.0f, 0.70f, 0.20f, 150.0f, 2.4f, 9.0f);
         }
     }
 
-    // 2. Fiery / Energy Core Fireballs (radiant incandescent core)
-    int num_cores = duplicate ? 5 : 14;
+    // 2. Fiery / Energy Core Fireballs (rapid incandescent expansion)
+    int num_cores = duplicate ? 4 : 10;
     for (int i = 0; i < num_cores; i++)
     {
-        float vx = frand_range(-3.2f, 3.2f);
-        float vy = frand_range(-3.2f, 2.0f);
-        float sz = frand_range(16.0f, 34.0f);
-        float life = frand_range(14.0f, 24.0f);
+        float vx = frand_range(-6.5f, 6.5f);
+        float vy = frand_range(-6.0f, 3.5f);
+        float sz = frand_range(16.0f, 32.0f);
+        float life = frand_range(7.0f, 13.0f); // Quick energetic flash
         if (type == 1)
-            add_fire_burst(x, y, vx, vy, sz, life, 0.50f, 0.92f, 1.0f);
+            add_fire_burst(x, y, vx, vy, sz, life, 0.50f, 0.90f, 1.0f);
         else
-            add_fire_burst(x, y, vx, vy, sz, life, 1.1f, 0.75f, 0.20f);
+            add_fire_burst(x, y, vx, vy, sz, life, 1.0f, 0.70f, 0.20f);
     }
 
-    // 3. Omnidirectional High-Velocity Sparks (360 degrees)
-    int num_sparks = duplicate ? 28 : (60 + (std::rand() % 20));
+    // 3. Omnidirectional High-Velocity Sparks (fast 360-degree ejection)
+    int num_sparks = duplicate ? 24 : (50 + (std::rand() % 16));
     for (int i = 0; i < num_sparks; i++)
     {
         float ang = frand_range(0.0f, 6.2831853f);
-        float speed = frand_range(5.0f, 16.5f);
+        float speed = frand_range(8.0f, 26.0f); // Fast explosive burst
         float vx = std::cos(ang) * speed;
         float vy = std::sin(ang) * speed;
-        float life = frand_range(18.0f, 40.0f);
+        float life = frand_range(10.0f, 24.0f);
         add_spark(x, y, vx, vy, life, type == 1 ? 1 : 0);
     }
 
-    // 4. Burning Debris / Shrapnel chunks
+    // 4. Burning Debris / Shrapnel chunks (fast ballistic arc with heavy gravity)
     if (!duplicate)
     {
         int num_debris = 14 + (std::rand() % 6);
         for (int i = 0; i < num_debris; i++)
         {
-            float ang = frand_range(0.0f, 6.2831853f);
-            float speed = frand_range(4.5f, 12.0f);
-            float vx = std::cos(ang) * speed;
-            float vy = -std::abs(std::sin(ang) * speed); // upward eruption
-            float life = frand_range(24.0f, 45.0f);
+            float vx = frand_range(-14.0f, 14.0f);
+            float vy = frand_range(-18.0f, -6.0f); // Powerful upward explosive launch
+            float life = frand_range(18.0f, 32.0f);
             add_debris(x, y, vx, vy, life);
         }
     }
 
     // 5. Volumetric Smoke Puffs (transparent atmospheric billows, never opaque black)
-    int num_smoke = duplicate ? 6 : (16 + (std::rand() % 6));
+    int num_smoke = duplicate ? 5 : (12 + (std::rand() % 5));
     for (int i = 0; i < num_smoke; i++)
     {
-        float vx = frand_range(-2.2f, 2.2f);
-        float vy = frand_range(-3.2f, -0.6f); // upward thermal buoyancy
-        float start_sz = frand_range(6.0f, 12.0f);
-        float end_sz = frand_range(24.0f, 40.0f);
-        float life = frand_range(30.0f, 56.0f);
+        float vx = frand_range(-2.8f, 2.8f);
+        float vy = frand_range(-3.6f, -0.8f); // Upward thermal buoyancy
+        float start_sz = frand_range(5.0f, 10.0f);
+        float end_sz = frand_range(22.0f, 36.0f);
+        float life = frand_range(24.0f, 44.0f);
         // Warm fiery smoke fading to soft grey
-        float r = frand_range(0.35f, 0.45f);
-        float g = frand_range(0.28f, 0.36f);
-        float b = frand_range(0.22f, 0.30f);
-        add_smoke(x + frand_range(-8.0f, 8.0f), y + frand_range(-8.0f, 8.0f),
-                  vx, vy, start_sz, end_sz, life, r, g, b, 0.28f);
+        float r = frand_range(0.35f, 0.42f);
+        float g = frand_range(0.28f, 0.35f);
+        float b = frand_range(0.22f, 0.28f);
+        add_smoke(x + frand_range(-6.0f, 6.0f), y + frand_range(-6.0f, 6.0f),
+                  vx, vy, start_sz, end_sz, life, r, g, b, 0.25f);
     }
 }
 
 void RemasterParticles::spawn_small_explosion(float x, float y)
 {
     // Small shockwave
-    add_shockwave(x, y, 40.0f, 10.0f, 1.3f, 0.90f, 0.35f);
+    add_shockwave(x, y, 45.0f, 6.0f, 1.15f, 0.82f, 0.30f);
 
-    // 30-40 fiery sparks
-    int num_sparks = 32 + (std::rand() % 9);
+    // 24-32 fiery sparks
+    int num_sparks = 24 + (std::rand() % 8);
     for (int i = 0; i < num_sparks; i++)
     {
         float ang = frand_range(0.0f, 6.2831853f);
-        float speed = frand_range(4.0f, 11.0f);
+        float speed = frand_range(6.0f, 18.0f);
         float vx = std::cos(ang) * speed;
         float vy = std::sin(ang) * speed;
-        float life = frand_range(15.0f, 28.0f);
+        float life = frand_range(8.0f, 18.0f);
         add_spark(x, y, vx, vy, life, 0);
     }
 
     // Fireball center
-    for (int i = 0; i < 5; i++)
+    for (int i = 0; i < 4; i++)
     {
-        float vx = frand_range(-1.8f, 1.8f);
-        float vy = frand_range(-1.8f, 1.2f);
-        add_fire_burst(x, y, vx, vy, 16.0f, 14.0f, 1.1f, 0.70f, 0.18f);
+        float vx = frand_range(-3.5f, 3.5f);
+        float vy = frand_range(-3.5f, 2.0f);
+        add_fire_burst(x, y, vx, vy, 16.0f, 8.0f, 1.0f, 0.65f, 0.18f);
     }
 
     // Smoke puffs
-    for (int i = 0; i < 6; i++)
+    for (int i = 0; i < 4; i++)
     {
-        float vx = frand_range(-1.4f, 1.4f);
-        float vy = frand_range(-2.0f, -0.4f);
-        add_smoke(x, y, vx, vy, 4.0f, 18.0f, 28.0f, 0.35f, 0.32f, 0.30f, 0.25f);
+        float vx = frand_range(-1.8f, 1.8f);
+        float vy = frand_range(-2.5f, -0.6f);
+        add_smoke(x, y, vx, vy, 4.0f, 16.0f, 20.0f, 0.35f, 0.32f, 0.30f, 0.22f);
     }
 
     // Dynamic light burst
-    add_light_burst(x, y, 1.0f, 0.75f, 0.25f, 115.0f, 3.6f, 10.0f);
+    add_light_burst(x, y, 0.98f, 0.72f, 0.22f, 90.0f, 1.8f, 6.0f);
 }
 
 void RemasterParticles::spawn_smoke_trail(float x, float y, float vx, float vy)
@@ -540,10 +539,10 @@ void RemasterParticles::tick()
 
         if (p.type == PARTICLE_SPARK)
         {
-            // Physics: gravity + air drag
-            p.vy += 0.28f; // downward gravity
-            p.vx *= 0.94f;
-            p.vy *= 0.94f;
+            // Physics: gravity + air drag (faster snappy downward acceleration)
+            p.vy += 0.52f;
+            p.vx *= 0.965f;
+            p.vy *= 0.965f;
 
             float next_x = p.x + p.vx;
             float next_y = p.y + p.vy;
@@ -634,17 +633,18 @@ void RemasterParticles::tick()
         }
         else if (p.type == PARTICLE_DEBRIS)
         {
-            p.vy += 0.34f; // heavier gravity
-            p.vx *= 0.95f;
-            p.vy *= 0.95f;
+            // Heavy physical gravity so falling chunks slam down with realistic weight and speed
+            p.vy += 0.92f;
+            p.vx *= 0.985f;
+            p.vy *= 0.985f;
 
             float next_x = p.x + p.vx;
             float next_y = p.y + p.vy;
 
             if (p.bounce_count < 4 && is_point_solid(next_x, next_y))
             {
-                p.vx = -p.vx * 0.40f;
-                p.vy = -p.vy * 0.40f;
+                p.vx = -p.vx * 0.52f;
+                p.vy = -p.vy * 0.48f;
                 p.bounce_count++;
             }
             else
@@ -664,25 +664,25 @@ void RemasterParticles::tick()
         {
             p.x += p.vx;
             p.y += p.vy;
-            p.vy -= 0.06f; // gentle upward thermal buoyancy
-            p.vx *= 0.96f;
+            p.vy -= 0.07f; // upward thermal buoyancy
+            p.vx *= 0.95f;
 
             float progress = 1.0f - t;
             p.size = p.start_size + (p.end_size - p.start_size) * std::sqrt(progress);
-            p.a = p.start_size * 0.035f + 0.28f * (t * t);
+            p.a = p.start_size * 0.035f + 0.25f * (t * t);
         }
         else if (p.type == PARTICLE_SHOCKWAVE)
         {
             float progress = 1.0f - t;
-            p.size = p.start_size + (p.end_size - p.start_size) * std::pow(progress, 0.40f);
-            p.a = std::pow(t, 1.1f);
+            p.size = p.start_size + (p.end_size - p.start_size) * std::pow(progress, 0.32f);
+            p.a = std::pow(t, 1.25f);
         }
         else if (p.type == PARTICLE_FIRE_BURST)
         {
             p.x += p.vx;
             p.y += p.vy;
-            p.vx *= 0.90f;
-            p.vy *= 0.90f;
+            p.vx *= 0.86f;
+            p.vy *= 0.86f;
 
             float progress = 1.0f - t;
             p.size = p.start_size + (p.end_size - p.start_size) * progress;
@@ -893,7 +893,7 @@ void RemasterParticles::render_emissive(float cam_x, float cam_y, float view_w, 
 
             float hw = 1.05f;
             float tail_hw = 0.35f;
-            float boost = 2.6f;
+            float boost = 1.25f;
 
             ParticleVertex v0{tail_x + nx * tail_hw, tail_y + ny * tail_hw, p.r * boost, p.g * boost, p.b * boost, p.a * 0.20f, 0.0f, 0.0f, 0};
             ParticleVertex v1{tail_x - nx * tail_hw, tail_y - ny * tail_hw, p.r * boost, p.g * boost, p.b * boost, p.a * 0.20f, 0.0f, 0.0f, 0};
@@ -913,7 +913,7 @@ void RemasterParticles::render_emissive(float cam_x, float cam_y, float view_w, 
         else if (p.type == PARTICLE_SHOCKWAVE || p.type == PARTICLE_FIRE_BURST)
         {
             float hs = p.size;
-            float boost = (p.type == PARTICLE_SHOCKWAVE) ? 2.8f : 3.2f;
+            float boost = (p.type == PARTICLE_SHOCKWAVE) ? 1.30f : 1.45f;
             int vtype = (p.type == PARTICLE_SHOCKWAVE) ? 2 : 1;
 
             ParticleVertex v0{p.x - hs, p.y - hs, p.r * boost, p.g * boost, p.b * boost, p.a, 0.0f, 0.0f, vtype};

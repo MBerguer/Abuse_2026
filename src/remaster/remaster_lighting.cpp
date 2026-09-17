@@ -86,8 +86,8 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
             continue;
 
         // Natural warm industrial light (no artificial green/red tints)
-        float cr = 1.0f, cg = 0.98f, cb = 0.94f;
-        add_point_light(lx, ly, 0.06f, cr, cg, cb, std::max(0.12f, radius * 1.2f), 0.65f);
+        float cr = 0.98f, cg = 0.94f, cb = 0.88f;
+        add_point_light(lx, ly, 0.06f, cr, cg, cb, std::max(0.10f, radius * 0.95f), 0.42f);
     }
 
     // 2. Player Subtle Local Aura & Muzzle Flash (no blinding searchlight cone)
@@ -137,29 +137,29 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
         }
 
         // 2a. Player subtle body presence (dim ambient glow around character torso)
-        float body_intensity = flashlight_on ? 0.30f : 0.18f;
-        add_point_light(px, py, 0.06f, 1.0f, 0.98f, 0.95f, 0.08f, body_intensity);
+        float body_intensity = flashlight_on ? 0.12f : 0.08f;
+        add_point_light(px, py, 0.06f, 1.0f, 0.98f, 0.95f, 0.06f, body_intensity);
 
         if (flashlight_on)
         {
             // 2b. Tactical Weapon-Mounted Directional Flashlight (starts directly at muzzle tip, pointing outward)
-            float spot_intensity = player_firing ? 2.8f : 2.4f;
-            float spot_radius = player_firing ? 0.90f : 0.85f;
-            float spot_cutoff = 0.78f; // ~38.7 degree tactical cone (half-angle), matching user capture
+            float spot_intensity = player_firing ? 1.45f : 1.15f;
+            float spot_radius = player_firing ? 0.65f : 0.60f;
+            float spot_cutoff = 0.84f; // ~32.8 degree crisp tactical cone (half-angle)
             add_spot_light(mx, my, 0.05f,
-                           1.0f, 0.98f, 0.94f,
+                           1.0f, 0.97f, 0.92f,
                            spot_radius, spot_intensity,
                            dx, dy, spot_cutoff);
 
             // Flashlight lens emitter core: subtle tactical diode right on the weapon muzzle tip
             add_point_light(mx, my, 0.025f,
                             1.0f, 0.98f, 0.95f,
-                            0.035f, 1.1f);
+                            0.025f, 0.55f);
 
             // 2c. Dynamic muzzle flash burst when firing (anchored right at muzzle tip)
             if (player_firing)
             {
-                add_point_light(mx, my, 0.04f, 1.0f, 0.90f, 0.45f, 0.28f, 3.2f);
+                add_point_light(mx, my, 0.04f, 1.0f, 0.88f, 0.40f, 0.20f, 1.6f);
             }
         }
     }
@@ -188,40 +188,40 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
             {
                 const char *name = object_names[o->otype];
 
-                // Rockets / Missiles: intense fiery flame and smoke trail
+                // Rockets / Missiles: warm fiery flame and smoke trail
                 if (strcasestr(name, "rocket"))
                 {
-                    add_point_light(ox, oy, 0.05f, 1.0f, 0.55f, 0.12f, 0.22f, 2.8f);
+                    add_point_light(ox, oy, 0.05f, 1.0f, 0.55f, 0.12f, 0.16f, 1.35f);
                 }
-                // Grenades: pulsing green/yellow phosphorescent light
+                // Grenades: gentle warm yellow-green phosphorescent pulse
                 else if (strcasestr(name, "gren"))
                 {
-                    add_point_light(ox, oy, 0.05f, 0.35f, 1.0f, 0.20f, 0.18f, 2.2f);
+                    add_point_light(ox, oy, 0.05f, 0.45f, 0.85f, 0.25f, 0.12f, 1.10f);
                 }
-                // Plasma shots: bright electric cyan/blue ray
+                // Plasma shots: delicate electric cyan/blue ray
                 else if (strcasestr(name, "plasma"))
                 {
-                    add_point_light(ox, oy, 0.04f, 0.15f, 0.75f, 1.0f, 0.24f, 3.0f);
+                    add_point_light(ox, oy, 0.04f, 0.20f, 0.75f, 0.95f, 0.16f, 1.40f);
                 }
-                // Lasers and rifle bullets: vibrant red/amber beam light
+                // Lasers and rifle bullets: refined ruby/amber beam light
                 else if (strcasestr(name, "laser") || strcasestr(name, "bullet"))
                 {
-                    add_point_light(ox, oy, 0.04f, 1.0f, 0.20f, 0.12f, 0.16f, 2.4f);
+                    add_point_light(ox, oy, 0.04f, 0.95f, 0.25f, 0.18f, 0.12f, 1.25f);
                 }
-                // Firebombs: intense burning orange-yellow fire
+                // Firebombs: warm burning orange fire
                 else if (strcasestr(name, "fire"))
                 {
-                    add_point_light(ox, oy, 0.05f, 1.0f, 0.45f, 0.05f, 0.25f, 3.2f);
+                    add_point_light(ox, oy, 0.05f, 0.98f, 0.50f, 0.10f, 0.18f, 1.45f);
                 }
                 // Discs and energy blades: violet/magenta glow
                 else if (strcasestr(name, "dfris") || strcasestr(name, "lsaber"))
                 {
-                    add_point_light(ox, oy, 0.05f, 0.85f, 0.25f, 1.0f, 0.20f, 2.6f);
+                    add_point_light(ox, oy, 0.05f, 0.80f, 0.30f, 0.95f, 0.14f, 1.25f);
                 }
-                // Explosions: large expanding warm flash lighting up surrounding architecture
+                // Explosions: warm flash lighting up surrounding architecture
                 else if (strcasestr(name, "explo") || strcasestr(name, "exp_"))
                 {
-                    add_point_light(ox, oy, 0.06f, 1.0f, 0.85f, 0.40f, 0.45f, 4.2f);
+                    add_point_light(ox, oy, 0.06f, 1.0f, 0.82f, 0.35f, 0.32f, 2.2f);
                 }
                 // Switches / Buttons (SWITCH, SWITCH_ONCE, SWITCH_DELAY, SWITCH_BALL, SWITCH_MOVER)
                 else if (strcasestr(name, "switch"))
@@ -229,30 +229,28 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
                     bool is_on = (o->state == running || o->Aistate != 0);
                     if (is_on)
                     {
-                        // Activated: vibrant glowing green indicator light
-                        add_point_light(ox, oy - 0.02f, 0.05f, 0.12f, 0.98f, 0.25f, 0.14f, 2.2f);
+                        // Activated: subtle, delicate tech emerald LED (non-blinding)
+                        add_point_light(ox, oy - 0.02f, 0.04f, 0.22f, 0.82f, 0.42f, 0.075f, 0.65f);
                     }
                     else
                     {
-                        // Standby / Off: subtle amber-red standby LED
-                        add_point_light(ox, oy - 0.02f, 0.04f, 0.85f, 0.15f, 0.05f, 0.08f, 1.0f);
+                        // Standby / Off: subtle warm amber-red standby LED
+                        add_point_light(ox, oy - 0.02f, 0.04f, 0.80f, 0.30f, 0.08f, 0.050f, 0.40f);
                     }
                 }
                 // Doors / Gates (SWITCH_DOOR, TRAP_DOOR, DOOR)
                 else if (strcasestr(name, "door") && !strcasestr(name, "tp_door"))
                 {
-                    // Standard sliding/trap doors linked to switches:
-                    // State 0: closed, State 1: opening, State 2: open, State 3: closing
                     bool is_open_or_moving = (o->state != stopped || o->Aistate != 0);
                     if (is_open_or_moving)
                     {
-                        // Open threshold: warm yellowish / golden amber passageway light (amarillita)
-                        add_point_light(ox, oy - 0.10f, 0.06f, 1.0f, 0.88f, 0.40f, 0.28f, 2.2f);
+                        // Open threshold: warm soft halogen passageway light (amarillita suave)
+                        add_point_light(ox, oy - 0.10f, 0.06f, 0.96f, 0.82f, 0.48f, 0.16f, 0.75f);
                     }
                     else
                     {
-                        // Closed: subtle warm amber safety sensor light on frame (no green)
-                        add_point_light(ox, oy - 0.20f, 0.04f, 0.90f, 0.55f, 0.10f, 0.08f, 1.0f);
+                        // Closed: gentle warm amber safety indicator on frame (delicate)
+                        add_point_light(ox, oy - 0.20f, 0.04f, 0.85f, 0.48f, 0.12f, 0.055f, 0.35f);
                     }
                 }
                 // Computer Save Terminals (RESTART_POSITION)
@@ -261,13 +259,13 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
                     bool is_saving = (o->state == running || o->Aistate >= 2);
                     if (is_saving)
                     {
-                        // Active save flash: bright digital cyan-white burst
-                        add_point_light(ox, oy - 0.06f, 0.06f, 0.40f, 0.90f, 1.0f, 0.28f, 3.2f);
+                        // Active save flash: bright digital cyan burst
+                        add_point_light(ox, oy - 0.06f, 0.06f, 0.40f, 0.88f, 0.98f, 0.20f, 1.40f);
                     }
                     else
                     {
-                        // CRT terminal display: cool blue phosphor glow onto floor and nearby wall
-                        add_point_light(ox, oy - 0.06f, 0.05f, 0.18f, 0.65f, 1.0f, 0.16f, 1.6f);
+                        // CRT terminal display: soft cool blue phosphor glow onto floor
+                        add_point_light(ox, oy - 0.06f, 0.05f, 0.18f, 0.60f, 0.92f, 0.11f, 0.65f);
                     }
                 }
                 // Teleporters, Portals, and Exit Beams (TP_DOOR, TELE, TELE2, TELE_BEAM, NEXT_LEVEL, SENSOR_TELEPORT)
@@ -277,23 +275,23 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
                 {
                     bool is_active = (o->state == running || o->Aistate != 0);
                     float tp_pulse = 0.85f + 0.15f * std::sin((float)current_level->tick_counter() * 0.40f);
-                    float rad = is_active ? 0.46f : 0.32f;
-                    float inten = is_active ? 4.2f : 2.6f;
+                    float rad = is_active ? 0.32f : 0.22f;
+                    float inten = is_active ? 1.60f : 1.10f;
 
-                    // Dazzling pure-white energetic raytracing portal light
-                    add_point_light(ox, oy - 0.08f, 0.06f, 0.96f, 0.98f, 1.0f, rad * tp_pulse, inten);
-                    // Core electric diamond beam highlight
-                    add_point_light(ox, oy - 0.08f, 0.04f, 1.0f, 1.0f, 1.0f, rad * 0.40f, inten * 1.35f);
+                    // Delicate crystalline energetic portal light
+                    add_point_light(ox, oy - 0.08f, 0.06f, 0.92f, 0.96f, 1.0f, rad * tp_pulse, inten);
+                    // Core electric highlight
+                    add_point_light(ox, oy - 0.08f, 0.04f, 1.0f, 1.0f, 1.0f, rad * 0.40f, inten * 1.2f);
                 }
                 // Health Powerup (heart)
                 else if (strcasestr(name, "health"))
                 {
-                    add_point_light(ox, oy, 0.04f, 0.95f, 0.20f, 0.35f, 0.10f * pulse, 1.3f);
+                    add_point_light(ox, oy, 0.04f, 0.95f, 0.20f, 0.35f, 0.08f * pulse, 0.75f);
                 }
                 // Ammo and Powerup pickups
                 else if (strcasestr(name, "_icon") || strcasestr(name, "power_"))
                 {
-                    add_point_light(ox, oy, 0.04f, 0.30f, 0.85f, 0.95f, 0.09f, 1.1f);
+                    add_point_light(ox, oy, 0.04f, 0.25f, 0.75f, 0.90f, 0.07f, 0.65f);
                 }
             }
         }
@@ -386,13 +384,13 @@ void RemasterLighting::update_frame_lights(int camera_x, int camera_y, int view_
                 }
 
                 // Wide radius projects soft volumetric light down into the dark chamber
-                add_point_light(lx, ly, 0.08f, cr, cg, cb, 0.72f, 1.15f * flicker);
+                add_point_light(lx, ly, 0.08f, cr, cg, cb, 0.55f, 0.50f * flicker);
 
                 // For deep chasms / pits, add an ominous bottom glow
                 if (col % 3 == 1 && m_lights.size() < MAX_LIGHTS)
                 {
                     float ly_pit = 1.25f; // Deep below the floor
-                    add_point_light(lx, ly_pit, 0.08f, 0.90f, 0.35f, 0.10f, 0.65f, 0.85f * flicker);
+                    add_point_light(lx, ly_pit, 0.08f, 0.85f, 0.35f, 0.10f, 0.48f, 0.40f * flicker);
                 }
             }
         }
