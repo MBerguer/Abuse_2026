@@ -52,6 +52,8 @@ private:
     void draw_texture(uint32_t *buf, int bw, int bh, int dst_x, int dst_y, int dst_w, int dst_h, const HDTexture &img, float brightness = 1.0f);
 
     HDTexture m_hd_weapons[8];
+    HDTexture m_hud_bay[8];
+    HDTexture m_hud_bay_plate;
     HDTexture m_hud_bay_empty;
     HDTexture m_hud_top_grate;
     bool m_assets_loaded = false;
