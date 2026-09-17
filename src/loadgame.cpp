@@ -43,11 +43,18 @@ extern void *save_order;         // load from "saveordr.lsp", contains a list or
 
 extern JCFont *console_font;
 
+#include "loadgame.h"
+
+SaveTerminalContext g_save_context;
+
+#ifndef MAX_SAVE_GAMES
 #define MAX_SAVE_GAMES 15
+#endif
 #define MAX_SAVE_LINES 5
 int last_save_game_number=0;
 
 int save_buts[MAX_SAVE_GAMES * 3];
+
 
 void load_number_icons()
 {
@@ -179,11 +186,23 @@ int show_load_icon()
     return 0;
 }
 
+extern image *main_screen;
+void scale_put(image *im, image *screen, int x, int y, short new_width, short new_height);
+
 int load_game(int show_all, char const *title)   // return 0 if the player escapes, else return the number of the game to load
 {
 	//AR this creates the small load/save game window
 	//and takes complete control of the program until it leaves the loop
 	//it is called via clisp.cpp (case 263)
+
+    bool is_save_mode = (title && (strstr(title, "SAVE") != nullptr || strstr(title, "save") != nullptr));
+    image *live_thumb = nullptr;
+    if (main_screen && main_screen->Size().x > 0 && main_screen->Size().y > 0)
+    {
+        live_thumb = new image(ivec2(160, 100));
+        live_thumb->clear();
+        scale_put(main_screen, live_thumb, 0, 0, 160, 100);
+    }
 
     int total_saved=0;
     image *thumbnails[MAX_SAVE_GAMES];
@@ -214,23 +233,39 @@ int load_game(int show_all, char const *title)   // return 0 if the player escap
                 if (thumbnails[start_num]->Size().x>max_w) max_w=thumbnails[start_num]->Size().x;
                 if (thumbnails[start_num]->Size().y>max_h) max_h=thumbnails[start_num]->Size().y;
                 if (!first) first=thumbnails[start_num];
+                g_save_context.is_slot_saved[start_num] = true;
                 total_saved++;
             }
             else
                 fail=1;
         }
-        if (fail && show_all)
+        if (fail)
         {
-            thumbnails[start_num] = new image(ivec2(160, 100));
-            thumbnails[start_num]->clear();
-            console_font->PutString(thumbnails[start_num], ivec2(0), symbol_str("no_saved"));
-            total_saved++;
-            if (!first) first=thumbnails[start_num];
+            g_save_context.is_slot_saved[start_num] = false;
+            if (show_all)
+            {
+                if (is_save_mode && live_thumb)
+                {
+                    thumbnails[start_num] = live_thumb->copy();
+                }
+                else
+                {
+                    thumbnails[start_num] = new image(ivec2(160, 100));
+                    thumbnails[start_num]->clear();
+                    console_font->PutString(thumbnails[start_num], ivec2(0), symbol_str("no_saved"));
+                }
+                total_saved++;
+                if (!first) first=thumbnails[start_num];
+            }
         }
         delete fp;
     }
 
-    if (!total_saved) return 0;
+    if (!total_saved)
+    {
+        if (live_thumb) delete live_thumb;
+        return 0;
+    }
     if (total_saved>MAX_SAVE_GAMES)
         total_saved=MAX_SAVE_GAMES;
 
@@ -251,15 +286,29 @@ int load_game(int show_all, char const *title)   // return 0 if the player escap
     buts[i]->next=buts[i+1];
 */
 
-    // Create thumbnail window 5 pixels to the right of the list window
-    Jwindow *l_win = create_num_window(0,total_saved,MAX_SAVE_LINES,thumbnails);
-    Jwindow *preview = wm->CreateWindow(l_win->m_pos + ivec2(l_win->m_size.x + 5, 0), ivec2(max_w, max_h), NULL, title);
+    // Create thumbnail window with gap for HD monitor frame
+    int win_mx = 3;
+    int gap = 24;
+    Jwindow *l_win = create_num_window(win_mx, total_saved, MAX_SAVE_LINES, thumbnails);
+    Jwindow *preview = wm->CreateWindow(l_win->m_pos + ivec2(l_win->m_size.x + gap, 0), ivec2(max_w, max_h), NULL, title);
 
     preview->m_surf->PutImage(first, ivec2(preview->x1(), preview->y1()));
 
 	//AR let me know we are stuck here
 	the_game->ar_stateold = the_game->ar_state;
 	the_game->ar_state = AR_LOADSAVE;
+
+    // Connect Remaster Save Terminal Context
+    g_save_context.active = true;
+    if (title) strncpy(g_save_context.title, title, sizeof(g_save_context.title) - 1);
+    else g_save_context.title[0] = 0;
+    g_save_context.total_saved = total_saved;
+    g_save_context.current_preview_index = 0;
+    g_save_context.live_screenshot = live_thumb;
+    for (int ti = 0; ti < MAX_SAVE_GAMES; ti++)
+        g_save_context.thumbnails[ti] = (ti < total_saved) ? thumbnails[ti] : nullptr;
+    g_save_context.l_win = l_win;
+    g_save_context.preview = preview;
 
 	//AR controller ui movement, number icon size 30x25
 	static int button_w = 30;
@@ -291,11 +340,31 @@ int load_game(int show_all, char const *title)   // return 0 if the player escap
         if (ev.type==EV_MESSAGE && ev.message.id>=ID_LOAD_GAME_PREVIEW && ev.message.id<ID_LOAD_PLAYER_GAME)
         {
             int draw_num=ev.message.id-ID_LOAD_GAME_PREVIEW;
+            g_save_context.current_preview_index = draw_num;
             preview->clear();
             preview->m_surf->PutImage(thumbnails[draw_num], ivec2(preview->x1(), preview->y1()));
         }
 
         if ((ev.type==EV_CLOSE_WINDOW) || (ev.type==EV_KEY && ev.key==JK_ESC)) quit=1;
+
+        // Immediately drain any queued events pushed this tick (e.g. EV_MESSAGE from button click/hover)
+        while (wm->IsPending())
+        {
+            Event next_ev;
+            wm->get_event(next_ev);
+            if (next_ev.type==EV_MESSAGE && next_ev.message.id>=ID_LOAD_GAME_NUMBER && next_ev.message.id<ID_LOAD_GAME_PREVIEW)
+                got_level=next_ev.message.id-ID_LOAD_GAME_NUMBER+1;
+
+            if (next_ev.type==EV_MESSAGE && next_ev.message.id>=ID_LOAD_GAME_PREVIEW && next_ev.message.id<ID_LOAD_PLAYER_GAME)
+            {
+                int draw_num=next_ev.message.id-ID_LOAD_GAME_PREVIEW;
+                g_save_context.current_preview_index = draw_num;
+                preview->clear();
+                preview->m_surf->PutImage(thumbnails[draw_num], ivec2(preview->x1(), preview->y1()));
+            }
+
+            if ((next_ev.type==EV_CLOSE_WINDOW) || (next_ev.type==EV_KEY && next_ev.key==JK_ESC)) quit=1;
+        }
 
 		//AR move cursor over icons
 		if(settings.ctr_aim && ev.type==EV_KEY)
@@ -325,6 +394,17 @@ int load_game(int show_all, char const *title)   // return 0 if the player escap
 
     } while (!got_level && !quit);
 
+    // Disconnect Remaster Save Terminal Context
+    g_save_context.active = false;
+    g_save_context.l_win = nullptr;
+    g_save_context.preview = nullptr;
+    g_save_context.live_screenshot = nullptr;
+    for (int ti = 0; ti < MAX_SAVE_GAMES; ti++)
+    {
+        g_save_context.thumbnails[ti] = nullptr;
+        g_save_context.is_slot_saved[ti] = false;
+    }
+
 	//AR let me know we leaving
 	the_game->ar_state = the_game->ar_stateold;
 	if(settings.ctr_aim) wm->SetMousePos(ivec2(old_mx,old_my));//put mouse where it was on entering
@@ -335,6 +415,9 @@ int load_game(int show_all, char const *title)   // return 0 if the player escap
 
     for (i=0; i<total_saved; i++)
         delete thumbnails[i];
+
+    if (live_thumb)
+        delete live_thumb;
 
     return got_level;
 }

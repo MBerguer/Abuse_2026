@@ -11,6 +11,26 @@
 #ifndef __LOADGAME_HPP__
 #define __LOADGAME_HPP__
 
+class image;
+class Jwindow;
+
+#define MAX_SAVE_GAMES 15
+
+struct SaveTerminalContext {
+    bool active = false;
+    char title[32] = {0};
+    int total_saved = 0;
+    int current_preview_index = 0;
+    image *thumbnails[MAX_SAVE_GAMES] = {nullptr};
+    bool is_slot_saved[MAX_SAVE_GAMES] = {false};
+    image *live_screenshot = nullptr;
+    Jwindow *l_win = nullptr;
+    Jwindow *preview = nullptr;
+};
+
+
+extern SaveTerminalContext g_save_context;
+
 int show_load_icon();
 int load_game(int show_all, char const *title);
 void get_savegame_name(char *buf);  // buf should be at least 50 bytes
@@ -19,3 +39,4 @@ void load_number_icons();
 int get_save_spot();
 
 #endif
+

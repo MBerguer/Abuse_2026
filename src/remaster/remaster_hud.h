@@ -42,6 +42,9 @@ private:
     // High-Resolution Main Menu
     void draw_main_menu(int window_w, int window_h, int vp_x, int vp_y, int vp_w, int vp_h, int src_w, int src_h);
 
+    // High-Resolution Save Terminal
+    void draw_save_terminal(int window_w, int window_h, int vp_x, int vp_y, int vp_w, int vp_h, int src_w, int src_h);
+
     struct HDTexture {
         int width = 0;
         int height = 0;
@@ -66,7 +69,12 @@ private:
     HDTexture m_btn_return;
     HDTexture m_btn_load;
     HDTexture m_btn_net;
+
+    HDTexture m_term_chassis;
+    HDTexture m_term_slot_plate;
+    HDTexture m_term_monitor_frame;
     bool m_assets_loaded = false;
+
 
     GLuint m_texture = 0;
     GLuint m_prog = 0;

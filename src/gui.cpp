@@ -20,7 +20,9 @@
 #include "loader2.h"
 #include "remaster/remaster_config.h"
 #include "sdlport/setup.h"
+#include "game.h"
 extern Settings settings;
+
 
 void ico_button::set_act_id(int id)
 {
@@ -151,13 +153,25 @@ void ico_button::area(int &x1, int &y1, int &x2, int &y2)
   y2=m_pos.y+cache.img(u)->Size().y-1;
   if (RemasterConfig::get().enabled)
   {
-    // Provide a comfortable, generous hit area for the remaster button plate and its left tooltip
-    x1 = std::max(0, m_pos.x - 70);
-    x2 = xres - 1;
-    y1 = std::max(0, m_pos.y - 1);
-    y2 = m_pos.y + cache.img(u)->Size().y;
+    if (the_game && the_game->ar_state == AR_MAINMENU)
+    {
+      // Provide a comfortable, generous hit area for the remaster button plate and its left tooltip
+      x1 = std::max(0, m_pos.x - 70);
+      x2 = xres - 1;
+      y1 = std::max(0, m_pos.y - 1);
+      y2 = m_pos.y + cache.img(u)->Size().y;
+    }
+    else if (the_game && the_game->ar_state == AR_LOADSAVE)
+    {
+      // Snug, gapless hit area for each save slot in the 3x5 grid
+      x1 = m_pos.x;
+      x2 = m_pos.x + cache.img(u)->Size().x;
+      y1 = m_pos.y;
+      y2 = m_pos.y + cache.img(u)->Size().y;
+    }
   }
 }
+
 
 ico_button::ico_button(int X, int Y, int ID, int Up, int down, int upa, int downa, ifield *Next, int act_id, char const *help_key)
 {

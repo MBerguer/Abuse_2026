@@ -317,9 +317,7 @@ void main()
 
         vec2 tile_local = mod(world_pos, u_tile_size);
 
-        // Sub-tile surface distance & edge determination
-        float is_floor_edge = 0.0;
-        float is_floor_crease = 0.0;
+        // Sub-tile surface distance & tread determination
         float is_in_ramp_tread = 0.0;
 
         // Tile 84 right cutoff (catwalk ends and pillar begins)
@@ -344,18 +342,7 @@ void main()
                 // Ramp body
                 layer = 3.0; // Diamond tread catwalk
                 uv_mat = fract(world_pos / 48.0);
-                
-                // Physical crisp dividing line along the slope:
-                float edge_dist = abs(dist);
-                if (edge_dist <= 1.1)
-                {
-                    is_floor_edge = 1.0 - (edge_dist / 1.1);
-                }
-                else if (dist > 1.1 && dist <= 2.4)
-                {
-                    is_floor_crease = 1.0 - abs(dist - 1.75) / 0.65;
-                }
-                else if (dist > 2.4)
+                if (dist > 2.4)
                 {
                     is_in_ramp_tread = 1.0;
                 }
@@ -375,16 +362,7 @@ void main()
             {
                 layer = 3.0;
                 uv_mat = fract(world_pos / 48.0);
-                float edge_dist = abs(dist);
-                if (edge_dist <= 1.1)
-                {
-                    is_floor_edge = 1.0 - (edge_dist / 1.1);
-                }
-                else if (dist > 1.1 && dist <= 2.4)
-                {
-                    is_floor_crease = 1.0 - abs(dist - 1.75) / 0.65;
-                }
-                else if (dist > 2.4)
+                if (dist > 2.4)
                 {
                     is_in_ramp_tread = 1.0;
                 }
@@ -404,15 +382,6 @@ void main()
             {
                 layer = 3.0; // Catwalk / floor plate
                 uv_mat = fract(world_pos / 48.0);
-                float edge_dist = abs(dist);
-                if (edge_dist <= 1.1)
-                {
-                    is_floor_edge = 1.0 - (edge_dist / 1.1);
-                }
-                else if (dist > 1.1 && dist <= 2.4)
-                {
-                    is_floor_crease = 1.0 - abs(dist - 1.75) / 0.65;
-                }
             }
             else
             {
@@ -517,22 +486,6 @@ void main()
             col.rgb = mix(col.rgb, col.rgb * (ai_rgb * 1.55), 0.45);
             metallic = 0.88;
             roughness = 0.20;
-
-            // Crisp physical floor division line (as user requested)
-            if (is_floor_edge > 0.01)
-            {
-                vec3 edge_spec = vec3(0.85, 0.90, 0.96); // Clean brushed metal chamfer rim
-                col.rgb = mix(col.rgb * 1.45 + vec3(0.12, 0.15, 0.18), edge_spec, is_floor_edge * 0.70);
-                metallic = 0.98;
-                roughness = 0.05;
-                dy -= 3.5 * is_floor_edge; // Upward facing chamfer reflection
-            }
-            else if (is_floor_crease > 0.01)
-            {
-                // Shadow crease directly under the edge lip (creates 3D physical shelf)
-                col.rgb *= (1.0 - is_floor_crease * 0.45);
-                dy += 2.5 * is_floor_crease;
-            }
 
             // Stepped tread slats on the ramp
             if (is_in_ramp_tread > 0.5)

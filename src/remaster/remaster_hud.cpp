@@ -250,9 +250,19 @@ void RemasterHUD::cleanup()
         m_hd_weapons[i].width = 0;
         m_hd_weapons[i].height = 0;
     }
+    m_term_chassis.pixels.clear();
+    m_term_chassis.width = 0;
+    m_term_chassis.height = 0;
+    m_term_slot_plate.pixels.clear();
+    m_term_slot_plate.width = 0;
+    m_term_slot_plate.height = 0;
+    m_term_monitor_frame.pixels.clear();
+    m_term_monitor_frame.width = 0;
+    m_term_monitor_frame.height = 0;
     m_assets_loaded = false;
     m_initialized = false;
 }
+
 
 void RemasterHUD::draw_notification(float alpha)
 {
@@ -509,8 +519,13 @@ void RemasterHUD::load_all_assets()
     load_texture_rgba("menu_btn_load.rgba", m_btn_load);
     load_texture_rgba("menu_btn_net.rgba", m_btn_net);
 
+    load_texture_rgba("terminal_chassis.rgba", m_term_chassis);
+    load_texture_rgba("terminal_slot_plate.rgba", m_term_slot_plate);
+    load_texture_rgba("terminal_monitor_frame.rgba", m_term_monitor_frame);
+
     m_assets_loaded = true;
 }
+
 
 void RemasterHUD::draw_seven_segment_digit(uint32_t *buf, int bw, int bh, int x, int y, int digit, int seg_w, int seg_h, int thickness, uint32_t on_color, uint32_t off_color, bool glow)
 {
@@ -1378,6 +1393,450 @@ void RemasterHUD::draw_main_menu(int window_w, int window_h, int vp_x, int vp_y,
     }
 }
 
+void RemasterHUD::draw_save_terminal(int window_w, int window_h, int vp_x, int vp_y, int vp_w, int vp_h, int src_w, int src_h)
+{
+    if (vp_w <= 0) vp_w = window_w;
+    if (vp_h <= 0) vp_h = window_h;
+    if (src_w <= 0) src_w = xres > 0 ? xres : 320;
+    if (src_h <= 0) src_h = yres > 0 ? yres : 200;
+
+    float scale_x = (float)vp_w / (float)src_w;
+    float scale_y = (float)vp_h / (float)src_h;
+
+    ivec2 mpos = wm ? wm->GetMousePos() : ivec2(0, 0);
+    float win_mx = (float)vp_x + (float)mpos.x * scale_x;
+    float win_my = (float)vp_y + (float)mpos.y * scale_y;
+
+    // 1. Background shading
+    if (the_game && the_game->state == MENU_STATE)
+    {
+        // Draw high-res title background if in menu
+        if (m_title_bg.width > 0 && m_title_bg.height > 0)
+            draw_texture(m_pixels.data(), m_canvas_w, m_canvas_h, vp_x, vp_y, vp_w, vp_h, m_title_bg, 0.45f);
+        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, 0, 0, m_canvas_w, m_canvas_h, make_rgba(4, 8, 14, 190));
+    }
+    else
+    {
+        // In-game tactical translucent blackout backdrop
+        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, 0, 0, m_canvas_w, m_canvas_h, make_rgba(4, 7, 12, 180));
+    }
+
+    // 2. Wall Console Chassis Bounds
+    int l_pos_x = g_save_context.l_win ? g_save_context.l_win->m_pos.x : 0;
+    int l_pos_y = g_save_context.l_win ? g_save_context.l_win->m_pos.y : (yres / 2 - 68);
+    int p_pos_x = g_save_context.preview ? g_save_context.preview->m_pos.x : (l_pos_x + 96 + 5);
+    int p_pos_y = g_save_context.preview ? g_save_context.preview->m_pos.y : l_pos_y;
+    int p_size_x = g_save_context.preview ? g_save_context.preview->m_size.x : 166;
+
+    int chassis_vx = std::max(0, l_pos_x - 6);
+    int chassis_vy = std::max(0, l_pos_y - 26);
+    int chassis_vr = std::min(src_w, p_pos_x + p_size_x + 8);
+    int chassis_vb = std::min(src_h, l_pos_y + 135 + 24);
+
+    int chassis_x = vp_x + (int)std::round(chassis_vx * scale_x);
+    int chassis_y = vp_y + (int)std::round(chassis_vy * scale_y);
+    int chassis_w = (int)std::round(chassis_vr * scale_x) - (int)std::round(chassis_vx * scale_x);
+    int chassis_h = (int)std::round(chassis_vb * scale_y) - (int)std::round(chassis_vy * scale_y);
+
+    // Draw Military Wall Terminal Chassis Texture
+    if (m_term_chassis.width > 0 && m_term_chassis.height > 0)
+    {
+        draw_texture(m_pixels.data(), m_canvas_w, m_canvas_h, chassis_x, chassis_y, chassis_w, chassis_h, m_term_chassis, 1.0f);
+    }
+    else
+    {
+        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, chassis_x, chassis_y, chassis_w, chassis_h, make_rgba(14, 20, 28, 245));
+    }
+
+    // Outer tactical bevel frame
+    draw_frame(m_pixels.data(), m_canvas_w, m_canvas_h, chassis_x, chassis_y, chassis_w, chassis_h, 0, make_rgba(0, 220, 255, 230));
+
+    // Top Header Bar
+    int hdr_h = (int)std::round(24.0f * scale_y);
+    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, chassis_x + 2, chassis_y + 2, chassis_w - 4, hdr_h, make_rgba(8, 22, 38, 240));
+    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, chassis_x + 2, chassis_y + hdr_h, chassis_w - 4, 2, make_rgba(0, 220, 255, 255));
+
+    const char *op_name = (g_save_context.title[0] != 0) ? g_save_context.title : "SAVE";
+    bool is_save_mode = (strstr(op_name, "SAVE") != nullptr || strstr(op_name, "save") != nullptr);
+    char title_buf[128];
+    snprintf(title_buf, sizeof(title_buf), "SEC-OPS // TACTICAL DATA CONSOLE // [%s ARCHIVE]", op_name);
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, chassis_x + 14, chassis_y + 6, title_buf, make_rgba(0, 240, 255, 255), 1, true);
+
+    // 3. Render 15 High-Resolution Slot Plates with Mini TV Previews
+    int iw = 30;
+    int ih = 25;
+    int l_border_x = Jwindow::left_border();
+    int l_border_y = Jwindow::top_border();
+
+    for (int i = 0; i < MAX_SAVE_GAMES; i++)
+    {
+        int col = i / 5;
+        int row = i % 5;
+
+        int v_bx = l_pos_x + l_border_x + col * iw;
+        int v_by = l_pos_y + l_border_y + row * ih;
+
+        int bx = vp_x + (int)std::round((float)v_bx * scale_x);
+        int by = vp_y + (int)std::round((float)v_by * scale_y);
+        int bw = (int)std::round((float)(v_bx + iw) * scale_x) - (int)std::round((float)v_bx * scale_x);
+        int bh = (int)std::round((float)(v_by + ih) * scale_y) - (int)std::round((float)v_by * scale_y);
+
+        bool is_valid = (i < g_save_context.total_saved);
+        bool is_selected = (i == g_save_context.current_preview_index);
+        bool is_hover = is_valid && (win_mx >= bx && win_mx < bx + bw && win_my >= by && win_my < by + bh);
+
+        float brightness = is_hover ? 1.25f : (is_selected ? 1.15f : (is_valid ? 0.95f : 0.65f));
+
+        // Draw HD Slot Plate Texture
+        if (m_term_slot_plate.width > 0 && m_term_slot_plate.height > 0)
+        {
+            draw_texture(m_pixels.data(), m_canvas_w, m_canvas_h, bx + 1, by + 1, bw - 2, bh - 2, m_term_slot_plate, brightness);
+        }
+        else
+        {
+            uint32_t bg_col = is_hover ? make_rgba(30, 60, 80, 240) : make_rgba(18, 25, 35, 240);
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx + 1, by + 1, bw - 2, bh - 2, bg_col);
+        }
+
+        // Mini TV Screen Display Area inside Plate
+        int mini_x = bx + (int)std::round(bw * 0.12f);
+        int mini_y = by + (int)std::round(bh * 0.22f);
+        int mini_w = (int)std::round(bw * 0.76f);
+        int mini_h = (int)std::round(bh * 0.54f);
+
+        image *slot_thumb = (i < MAX_SAVE_GAMES) ? g_save_context.thumbnails[i] : nullptr;
+        bool is_saved = (i < MAX_SAVE_GAMES) ? g_save_context.is_slot_saved[i] : false;
+
+        // If slot is empty but in SAVE mode, show live checkpoint thumbnail preview
+        if (!is_saved && is_save_mode && g_save_context.live_screenshot)
+        {
+            slot_thumb = g_save_context.live_screenshot;
+        }
+
+        // Draw Mini TV Preview
+        if (mini_w > 4 && mini_h > 4)
+        {
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, mini_x, mini_y, mini_w, mini_h, make_rgba(5, 8, 12, 255));
+
+            if (slot_thumb && pal && slot_thumb->Size().x > 0 && slot_thumb->Size().y > 0)
+            {
+                int stw = slot_thumb->Size().x;
+                int sth = slot_thumb->Size().y;
+                for (int mdy = 0; mdy < mini_h; mdy++)
+                {
+                    int mpy = mini_y + mdy;
+                    if (mpy < 0 || mpy >= m_canvas_h) continue;
+                    int msy = (mdy * sth) / mini_h;
+                    if (msy >= sth) msy = sth - 1;
+                    const uint8_t *srow = slot_thumb->scan_line(msy);
+
+                    for (int mdx = 0; mdx < mini_w; mdx++)
+                    {
+                        int mpx = mini_x + mdx;
+                        if (mpx < 0 || mpx >= m_canvas_w) continue;
+                        int msx = (mdx * stw) / mini_w;
+                        if (msx >= stw) msx = stw - 1;
+
+                        uint8_t sc = srow[msx];
+                        uint8_t sr = pal->red(sc);
+                        uint8_t sg = pal->green(sc);
+                        uint8_t sb = pal->blue(sc);
+
+                        // Mini phosphor scanlines
+                        if (mdy % 2 == 1)
+                        {
+                            sr = static_cast<uint8_t>(sr * 0.82f);
+                            sg = static_cast<uint8_t>(std::min(255, static_cast<int>(sg * 0.88f + 6)));
+                            sb = static_cast<uint8_t>(sb * 0.82f);
+                        }
+
+                        // Edge falloff for mini TV bezel
+                        if (mdx == 0 || mdx == mini_w - 1 || mdy == 0 || mdy == mini_h - 1)
+                        {
+                            sr = static_cast<uint8_t>(sr * 0.45f);
+                            sg = static_cast<uint8_t>(sg * 0.45f);
+                            sb = static_cast<uint8_t>(sb * 0.45f);
+                        }
+
+                        // Live feed camera tint for unsaved slots
+                        if (!is_saved && is_save_mode)
+                        {
+                            sr = static_cast<uint8_t>(sr * 0.85f);
+                            sg = static_cast<uint8_t>(std::min(255, static_cast<int>(sg * 1.08f + 8)));
+                            sb = static_cast<uint8_t>(sb * 0.85f);
+                        }
+
+                        m_pixels[mpy * m_canvas_w + mpx] = make_rgba(sr, sg, sb, 255);
+                    }
+                }
+
+                // Mini CRT glass sheen reflection
+                for (int gd = 0; gd < std::min(mini_w, mini_h) / 3; gd++)
+                {
+                    int mgx = mini_x + 2 + gd * 2;
+                    int mgy = mini_y + 2 + gd;
+                    if (mgx < mini_x + mini_w && mgy < mini_y + mini_h && mgx < m_canvas_w && mgy < m_canvas_h)
+                    {
+                        uint32_t mo = m_pixels[mgy * m_canvas_w + mgx];
+                        uint8_t mr = mo & 0xFF, mg = (mo >> 8) & 0xFF, mb = (mo >> 16) & 0xFF;
+                        m_pixels[mgy * m_canvas_w + mgx] = make_rgba(std::min(255, mr + 18), std::min(255, mg + 24), std::min(255, mb + 20), 255);
+                    }
+                }
+            }
+            else
+            {
+                // Empty slot static noise pattern
+                for (int mdy = 0; mdy < mini_h; mdy++)
+                {
+                    int mpy = mini_y + mdy;
+                    if (mpy < 0 || mpy >= m_canvas_h) continue;
+                    uint8_t static_val = static_cast<uint8_t>(10 + ((mdy * 13 + i * 37) % 18));
+                    uint32_t static_col = make_rgba(static_val, static_val + 4, static_val + 8, 255);
+                    for (int mdx = 0; mdx < mini_w; mdx++)
+                    {
+                        int mpx = mini_x + mdx;
+                        if (mpx < 0 || mpx >= m_canvas_w) continue;
+                        m_pixels[mpy * m_canvas_w + mpx] = static_col;
+                    }
+                }
+                draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, mini_x + mini_w / 2 - 14, mini_y + mini_h / 2 - 4, "EMPTY", make_rgba(100, 120, 140, 190), 1, false);
+            }
+
+            // Mini CRT frame inner shadow border
+            draw_frame(m_pixels.data(), m_canvas_w, m_canvas_h, mini_x, mini_y, mini_w, mini_h, 0, make_rgba(20, 32, 45, 230));
+        }
+
+        // Slot Plate Border Glow
+        uint32_t border_col = is_hover ? make_rgba(0, 255, 220, 255) :
+                              (is_selected ? make_rgba(0, 220, 255, 240) :
+                              (is_valid ? make_rgba(60, 75, 90, 180) : make_rgba(30, 38, 45, 150)));
+        draw_frame(m_pixels.data(), m_canvas_w, m_canvas_h, bx, by, bw, bh, 0, border_col);
+
+        // If selected: glowing tactical corner brackets
+        if (is_selected)
+        {
+            uint32_t sel_col = make_rgba(0, 245, 255, 255);
+            // top-left
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx - 2, by - 2, 8, 2, sel_col);
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx - 2, by - 2, 2, 8, sel_col);
+            // top-right
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx + bw - 6, by - 2, 8, 2, sel_col);
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx + bw, by - 2, 2, 8, sel_col);
+            // bottom-left
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx - 2, by + bh, 8, 2, sel_col);
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx - 2, by + bh - 6, 2, 8, sel_col);
+            // bottom-right
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx + bw - 6, by + bh, 8, 2, sel_col);
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx + bw, by + bh - 6, 2, 8, sel_col);
+        }
+
+        // Slot number text (top-left)
+        char num_buf[8];
+        snprintf(num_buf, sizeof(num_buf), "%02d", i + 1);
+        int num_x = bx + (int)(4.0f * scale_x);
+        int num_y = by + (int)(3.0f * scale_y);
+        uint32_t num_col = is_hover ? make_rgba(255, 255, 255, 255) :
+                           (is_selected ? make_rgba(0, 245, 255, 255) :
+                           (is_valid ? make_rgba(190, 215, 235, 240) : make_rgba(100, 115, 130, 180)));
+        draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, num_x, num_y, num_buf, num_col, 1, true);
+
+        // Status indicator badge (top-right)
+        const char *stat_str = is_saved ? "SAV" : (is_save_mode ? "REC" : "EMP");
+        uint32_t stat_col = is_saved ? make_rgba(40, 255, 130, 240) :
+                            (is_save_mode ? make_rgba(255, 180, 40, 240) : make_rgba(100, 120, 140, 180));
+        int stat_x = bx + bw - (int)(22.0f * scale_x);
+        int stat_y = by + (int)(3.0f * scale_y);
+        draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, stat_x, stat_y, stat_str, stat_col, 1, false);
+    }
+
+    // 4. Render CRT Preview Monitor
+    int p_left_b = Jwindow::left_border();
+    int p_top_b = Jwindow::top_border();
+    int v_pvx = p_pos_x + p_left_b;
+    int v_pvy = p_pos_y + p_top_b;
+    int v_pvw = 160;
+    int v_pvh = 100;
+
+    int pvx = vp_x + (int)std::round((float)v_pvx * scale_x);
+    int pvy = vp_y + (int)std::round((float)v_pvy * scale_y);
+    int pvw = (int)std::round((float)(v_pvx + v_pvw) * scale_x) - (int)std::round((float)v_pvx * scale_x);
+    int pvh = (int)std::round((float)(v_pvy + v_pvh) * scale_y) - (int)std::round((float)v_pvy * scale_y);
+
+    // Precise inner CRT screen aperture in terminal_monitor_frame.rgba (360x288):
+    // x_rel in [0.147, 0.861] (width = 0.714 * mon_w)
+    // y_rel in [0.174, 0.830] (height = 0.656 * mon_h)
+    const float ap_x0 = 0.147f;
+    const float ap_y0 = 0.174f;
+    const float ap_w  = 0.714f;
+    const float ap_h  = 0.656f;
+
+    // Monitor frame dimension calculated so CRT aperture matches pvw, pvh
+    int mon_w = (int)std::round((float)pvw / ap_w);
+    int mon_h = (int)std::round((float)pvh / ap_h);
+    int mon_x = pvx - (int)std::round((float)mon_w * ap_x0);
+    int mon_y = pvy - (int)std::round((float)mon_h * ap_y0);
+
+    // Screen aperture coordinates on canvas
+    int scr_x = pvx;
+    int scr_y = pvy;
+    int scr_w = pvw;
+    int scr_h = pvh;
+
+    // Clear CRT screen glass
+    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, scr_x, scr_y, scr_w, scr_h, make_rgba(5, 8, 12, 255));
+
+    int sel_idx = g_save_context.current_preview_index;
+    image *thumb = (sel_idx >= 0 && sel_idx < MAX_SAVE_GAMES) ? g_save_context.thumbnails[sel_idx] : nullptr;
+    bool is_sel_saved = (sel_idx >= 0 && sel_idx < MAX_SAVE_GAMES) ? g_save_context.is_slot_saved[sel_idx] : false;
+
+    // In SAVE mode: if slot is empty, show the live checkpoint screenshot!
+    if (!thumb && is_save_mode && g_save_context.live_screenshot)
+    {
+        thumb = g_save_context.live_screenshot;
+    }
+
+    if (thumb && pal && thumb->Size().x > 0 && thumb->Size().y > 0)
+    {
+        int tw = thumb->Size().x;
+        int th = thumb->Size().y;
+
+        for (int dy = 0; dy < scr_h; dy++)
+        {
+            int py = scr_y + dy;
+            if (py < 0 || py >= m_canvas_h) continue;
+            int sy = (dy * th) / scr_h;
+            if (sy >= th) sy = th - 1;
+            const uint8_t *row = thumb->scan_line(sy);
+
+            // Normalized Y coordinate: -1 to +1
+            float c_y = ((float)dy / (float)(scr_h - 1)) * 2.0f - 1.0f;
+
+            for (int dx = 0; dx < scr_w; dx++)
+            {
+                int px = scr_x + dx;
+                if (px < 0 || px >= m_canvas_w) continue;
+                int sx = (dx * tw) / scr_w;
+                if (sx >= tw) sx = tw - 1;
+
+                uint8_t c = row[sx];
+                uint8_t r = pal->red(c);
+                uint8_t g = pal->green(c);
+                uint8_t b = pal->blue(c);
+
+                // Normalized X coordinate: -1 to +1
+                float c_x = ((float)dx / (float)(scr_w - 1)) * 2.0f - 1.0f;
+
+                // 1. CRT Curved Glass Corner Falloff
+                float corner_metric = c_x * c_x * c_x * c_x + c_y * c_y * c_y * c_y;
+                float corner_fade = 1.0f;
+                if (corner_metric > 0.88f)
+                {
+                    corner_fade = std::max(0.0f, 1.0f - (corner_metric - 0.88f) / 0.12f);
+                }
+
+                // 2. CRT Glass Edge Vignette
+                float vignette = (1.0f - c_x * c_x * 0.18f) * (1.0f - c_y * c_y * 0.18f);
+
+                // 3. Smooth Bezel Seam Disguise (soft ramp in outer 6 pixels)
+                int min_d = std::min({dx, scr_w - 1 - dx, dy, scr_h - 1 - dy});
+                float edge_fade = min_d < 6 ? ((float)min_d / 6.0f) : 1.0f;
+
+                float total_shade = corner_fade * vignette * edge_fade;
+
+                // 4. Phosphor Scanline Modulation
+                if (dy % 2 == 1)
+                {
+                    r = static_cast<uint8_t>(r * 0.80f);
+                    g = static_cast<uint8_t>(std::min(255, static_cast<int>(g * 0.88f + 10)));
+                    b = static_cast<uint8_t>(b * 0.80f);
+                }
+
+                r = static_cast<uint8_t>(r * total_shade);
+                g = static_cast<uint8_t>(g * total_shade);
+                b = static_cast<uint8_t>(b * total_shade);
+
+                m_pixels[py * m_canvas_w + px] = make_rgba(r, g, b, 255);
+            }
+        }
+
+        // On-Screen CRT Television OSD (Diegetic text inside screen)
+        char osd_buf[64];
+        if (is_sel_saved)
+        {
+            snprintf(osd_buf, sizeof(osd_buf), "[REC-0%d // ARCHIVE OK]", sel_idx + 1);
+            draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, scr_x + 10, scr_y + 10, osd_buf, make_rgba(40, 255, 130, 230), 1, true);
+        }
+        else if (is_save_mode)
+        {
+            snprintf(osd_buf, sizeof(osd_buf), "[LIVE CAMERA // READY TO SAVE]");
+            draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, scr_x + 10, scr_y + 10, osd_buf, make_rgba(255, 190, 40, 240), 1, true);
+        }
+    }
+    else
+    {
+        // CRT Static Noise Pattern for Empty Monitor
+        for (int dy = 0; dy < scr_h; dy++)
+        {
+            int py = scr_y + dy;
+            if (py < 0 || py >= m_canvas_h) continue;
+            for (int dx = 0; dx < scr_w; dx++)
+            {
+                int px = scr_x + dx;
+                if (px < 0 || px >= m_canvas_w) continue;
+                uint8_t noise = static_cast<uint8_t>(12 + ((dx * 17 + dy * 31 + sel_idx * 53) % 24));
+                m_pixels[py * m_canvas_w + px] = make_rgba(noise, noise + 4, noise + 8, 255);
+            }
+        }
+        draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, scr_x + scr_w / 2 - 64, scr_y + scr_h / 2 - 6, "[ NO SIGNAL RECORDED ]", make_rgba(130, 150, 170, 220), 1, true);
+    }
+
+    // 5. Draw Monitor Frame Housing ON TOP
+    if (m_term_monitor_frame.width > 0 && m_term_monitor_frame.height > 0)
+    {
+        draw_texture(m_pixels.data(), m_canvas_w, m_canvas_h, mon_x, mon_y, mon_w, mon_h, m_term_monitor_frame, 1.0f);
+    }
+    else
+    {
+        draw_frame(m_pixels.data(), m_canvas_w, m_canvas_h, mon_x, mon_y, mon_w, mon_h, 0, make_rgba(0, 200, 255, 200));
+    }
+
+    // Diegetic CRT glass glare highlight arc across the curved glass
+    for (int d = 0; d < std::min(scr_w, scr_h) / 3; d++)
+    {
+        int gx = scr_x + 12 + d * 2;
+        int gy = scr_y + 10 + d;
+        if (gx < scr_x + scr_w - 12 && gy < scr_y + scr_h - 12 && gx < m_canvas_w && gy < m_canvas_h)
+        {
+            uint32_t orig = m_pixels[gy * m_canvas_w + gx];
+            uint8_t or_r = orig & 0xFF, or_g = (orig >> 8) & 0xFF, or_b = (orig >> 16) & 0xFF;
+            m_pixels[gy * m_canvas_w + gx] = make_rgba(std::min(255, or_r + 16), std::min(255, or_g + 24), std::min(255, or_b + 20), 255);
+        }
+    }
+
+    // LED Status and Information Bar below Monitor
+    static float s_term_timer = 0.0f;
+    s_term_timer += 0.01667f;
+    bool led_blink = fmodf(s_term_timer, 0.8f) < 0.45f;
+
+    int stat_bar_y = mon_y + mon_h + 4;
+    char slot_info[128];
+    const char *status_desc = is_sel_saved ? "ARCHIVE VERIFIED" : (is_save_mode ? "STANDBY / NEW CHECKPOINT" : "EMPTY / UNFORMATTED");
+    snprintf(slot_info, sizeof(slot_info), "CHECKPOINT: SLOT %02d  //  %s", sel_idx + 1, status_desc);
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, scr_x, stat_bar_y, slot_info, make_rgba(0, 230, 255, 240), 1, true);
+
+    int led_y = stat_bar_y + 15;
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, scr_x, led_y,
+                led_blink ? "[* TERMINAL ONLINE // SYNC 60Hz]" : "[o LINK ACTIVE // METAL CORE]",
+                led_blink ? make_rgba(40, 255, 130, 255) : make_rgba(30, 180, 90, 210), 1, true);
+
+    // 6. Footer Instructions
+    int foot_y = chassis_y + chassis_h - (int)std::round(22.0f * scale_y);
+    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, chassis_x + 2, foot_y - 2, chassis_w - 4, 20, make_rgba(6, 12, 20, 220));
+    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, chassis_x + 16, foot_y + 2,
+                "[MOUSE CLICK / ENTER] CONFIRM CHECKPOINT    |    [ESC] ABORT & RETURN",
+                make_rgba(150, 180, 200, 220), 1, true);
+}
+
 void RemasterHUD::render(int window_w, int window_h, int vp_x, int vp_y, int vp_w, int vp_h, int src_w, int src_h)
 {
     if (!m_initialized)
@@ -1405,15 +1864,17 @@ void RemasterHUD::render(int window_w, int window_h, int vp_x, int vp_y, int vp_
                     current_level != nullptr &&
                     v != nullptr);
     bool in_menu = (the_game != nullptr && the_game->state == MENU_STATE);
+    bool in_save_terminal = (cfg.enabled && the_game != nullptr && the_game->ar_state == AR_LOADSAVE);
 
-    bool need_statusbar = (cfg.enabled && in_play);
-    bool need_menu = (cfg.enabled && in_menu);
+    bool need_statusbar = (cfg.enabled && in_play && !in_save_terminal);
+    bool need_menu = (cfg.enabled && in_menu && !in_save_terminal);
+    bool need_save_terminal = in_save_terminal;
     bool need_notification = (cfg.notification_timer > 0.0f && !cfg.notification_text.empty());
     bool need_dashboard = cfg.show_hud_overlay && in_play;
     bool need_cursor = (cfg.enabled && wm && wm->has_mouse() && wm->GetMouseVisual() != nullptr);
     bool need_pos_debug = cfg.show_pos_debug && in_play && (v != nullptr && v->m_focus != nullptr);
 
-    if (!need_statusbar && !need_menu && !need_notification && !need_dashboard && !need_cursor && !need_pos_debug)
+    if (!need_statusbar && !need_menu && !need_save_terminal && !need_notification && !need_dashboard && !need_cursor && !need_pos_debug)
         return;
 
     // Clear canvas
@@ -1424,6 +1885,10 @@ void RemasterHUD::render(int window_w, int window_h, int vp_x, int vp_y, int vp_
 
     if (need_menu)
         draw_main_menu(window_w, window_h, vp_x, vp_y, vp_w, vp_h, src_w, src_h);
+
+    if (need_save_terminal)
+        draw_save_terminal(window_w, window_h, vp_x, vp_y, vp_w, vp_h, src_w, src_h);
+
 
     if (need_pos_debug)
         draw_pos_debug();
