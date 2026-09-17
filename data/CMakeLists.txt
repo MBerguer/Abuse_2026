@@ -3,6 +3,8 @@ INSTALL(FILES
     edit.lsp    
 DESTINATION ${ASSETDIR})
 
+INSTALL(DIRECTORY hd DESTINATION ${ASSETDIR})
+
 # No idea what this was for
 #INSTALL(FILES music/playhmp.lsp DESTINATION ${ASSETDIR}/music)
 

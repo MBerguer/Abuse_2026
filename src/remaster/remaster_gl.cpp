@@ -9,6 +9,7 @@
 #include "image.h"
 #include "file_utils.h"
 #include "loader2.h"
+#include "game.h"
 
 #include <iostream>
 #include <vector>
@@ -422,6 +423,9 @@ static void check_dump_screenshot(int window_w, int window_h, bool in_gameplay)
     const char *dump_menu = getenv("ABUSE_DUMP_MENU");
     if (dump_menu)
     {
+        extern Game *the_game;
+        if (!the_game || the_game->state != MENU_STATE)
+            return;
         static int s_menu_counter = 0;
         s_menu_counter++;
         int target = atoi(dump_menu);

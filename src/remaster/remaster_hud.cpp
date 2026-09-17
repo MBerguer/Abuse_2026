@@ -498,6 +498,17 @@ void RemasterHUD::load_all_assets()
     }
     load_texture_rgba("weapon_01.rgba", m_hd_weapons[0]);
     load_texture_rgba("weapon_02.rgba", m_hd_weapons[1]);
+
+    load_texture_rgba("title_bg.rgba", m_title_bg);
+    load_texture_rgba("menu_btn_start.rgba", m_btn_start);
+    load_texture_rgba("menu_btn_diff.rgba", m_btn_diff);
+    load_texture_rgba("menu_btn_gamma.rgba", m_btn_gamma);
+    load_texture_rgba("menu_btn_volume.rgba", m_btn_volume);
+    load_texture_rgba("menu_btn_quit.rgba", m_btn_quit);
+    load_texture_rgba("menu_btn_return.rgba", m_btn_return);
+    load_texture_rgba("menu_btn_load.rgba", m_btn_load);
+    load_texture_rgba("menu_btn_net.rgba", m_btn_net);
+
     m_assets_loaded = true;
 }
 
@@ -1201,137 +1212,168 @@ void RemasterHUD::draw_main_menu(int window_w, int window_h, int vp_x, int vp_y,
     float win_mx = (float)vp_x + (float)mpos.x * scale_x;
     float win_my = (float)vp_y + (float)mpos.y * scale_y;
 
-    int dock_w = std::min(380, (int)(window_w * 0.30f));
-    dock_w = std::max(280, dock_w);
-    int dock_x = window_w - dock_w;
-    int dock_h = window_h;
+    // 1. Clear full canvas to pure pitch black (0, 0, 0, 255)
+    // Seamless letterboxing/pillarboxing for widescreen and ultra-widescreen displays
+    std::fill(m_pixels.begin(), m_pixels.end(), make_rgba(0, 0, 0, 255));
 
-    // Brushed titanium dock background with anisotropic micro-grain
-    for (int y = 0; y < dock_h; y++)
+    // 2. Render High-Resolution Remastered Title Screen Background (Alien on spotlight + burning ABUSE logo)
+    if (m_title_bg.width > 0 && m_title_bg.height > 0)
     {
-        float ty = (float)y / (float)dock_h;
-        int base_r = (int)(20.0f + ty * 6.0f);
-        int base_g = (int)(26.0f + ty * 7.0f);
-        int base_b = (int)(34.0f + ty * 8.0f);
-
-        for (int x = dock_x; x < window_w; x++)
-        {
-            int grain = (((x * 67 + y * 13) ^ (x * 19)) & 0x07) - 3;
-            uint8_t r = static_cast<uint8_t>(std::clamp(base_r + grain, 0, 255));
-            uint8_t g = static_cast<uint8_t>(std::clamp(base_g + grain, 0, 255));
-            uint8_t b = static_cast<uint8_t>(std::clamp(base_b + grain, 0, 255));
-            m_pixels[y * m_canvas_w + x] = make_rgba(r, g, b, 245);
-        }
+        // Fit within the active viewport preserving 4:3 / authentic title proportions
+        draw_texture(m_pixels.data(), m_canvas_w, m_canvas_h, vp_x, vp_y, vp_w, vp_h, m_title_bg, 1.0f);
     }
 
-    // Glowing vertical cyan neon strip along the left edge of the dock
-    for (int y = 0; y < dock_h; y++)
-    {
-        for (int hx = -3; hx <= 3; hx++)
-        {
-            int px = dock_x + hx;
-            if (px < 0 || px >= m_canvas_w) continue;
-            uint32_t neon = (hx == 0) ? make_rgba(255, 255, 255, 255)
-                                      : (std::abs(hx) == 1 ? make_rgba(100, 235, 255, 200)
-                                                           : make_rgba(0, 160, 255, 70));
-            uint32_t dst = m_pixels[y * m_canvas_w + px];
-            uint8_t a = (neon >> 24) & 0xFF;
-            float af = a / 255.0f;
-            uint8_t r = (uint8_t)((neon & 0xFF) * af + (dst & 0xFF) * (1.0f - af));
-            uint8_t g = (uint8_t)(((neon >> 8) & 0xFF) * af + ((dst >> 8) & 0xFF) * (1.0f - af));
-            uint8_t b = (uint8_t)(((neon >> 16) & 0xFF) * af + ((dst >> 16) & 0xFF) * (1.0f - af));
-            m_pixels[y * m_canvas_w + px] = make_rgba(r, g, b, 255);
-        }
-    }
-
-    // Terminal Header
-    int head_x = dock_x + 20;
-    int head_y = 16;
-    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, head_x, head_y, "ABUSE // 2026", make_rgba(0, 230, 255, 255), 2, true);
-    draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, head_x, head_y + 22, "SYSTEM TERMINAL - ACCESS GRANTED", make_rgba(130, 165, 190, 220), 1, false);
-
-    // Divider line below header
-    fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, head_x, head_y + 35, dock_w - 40, 1, make_rgba(0, 200, 255, 140));
-
-    // Determine buttons present (exact same order as menu.cpp)
-    struct MenuBtn {
+    // 3. Determine buttons present (exact same order as menu.cpp)
+    struct MenuBtnItem {
         int id;
-        std::string title;
-        std::string subtitle;
-        uint32_t icon_color;
+        std::string label;
+        std::string desc;
+        const HDTexture *tex;
+        int diff_index; // -1 if not difficulty
     };
-    std::vector<MenuBtn> buttons;
+    std::vector<MenuBtnItem> items;
 
     if (current_level)
-        buttons.push_back({ ID_RETURN, "RESUME MISSION", "RETURN TO ACTIVE COMBAT", make_rgba(0, 255, 200, 255) });
+        items.push_back({ ID_RETURN, "RESUME MISSION", "RETURN TO ACTIVE COMBAT", &m_btn_return, -1 });
     if (show_load_icon())
-        buttons.push_back({ ID_LOAD_PLAYER_GAME, "LOAD GAME", "RESTORE CHECKPOINT", make_rgba(100, 200, 255, 255) });
+        items.push_back({ ID_LOAD_PLAYER_GAME, "LOAD GAME", "RESTORE CHECKPOINT", &m_btn_load, -1 });
 
-    buttons.push_back({ ID_START_GAME, "START GAME", "NEW CAMPAIGN OPERATION", make_rgba(65, 255, 110, 255) });
+    items.push_back({ ID_START_GAME, "START GAME", "NEW CAMPAIGN OPERATION", &m_btn_start, -1 });
 
-    std::string diff_str = "NORMAL";
+    int cur_diff = 3;
     if (DEFINEDP(symbol_value(l_difficulty)))
     {
-        if (symbol_value(l_difficulty) == l_extreme) diff_str = "EXTREME";
-        else if (symbol_value(l_difficulty) == l_hard) diff_str = "HARD";
-        else if (symbol_value(l_difficulty) == l_easy) diff_str = "EASY";
+        if (symbol_value(l_difficulty) == l_easy) cur_diff = 0;
+        else if (symbol_value(l_difficulty) == l_medium) cur_diff = 1;
+        else if (symbol_value(l_difficulty) == l_hard) cur_diff = 2;
+        else if (symbol_value(l_difficulty) == l_extreme) cur_diff = 3;
     }
+    static const char *s_diff_titles[] = { "EASY", "MEDIUM", "HARD", "EXTREME" };
+    static const char *s_diff_subtitles[] = {
+        "STANDARD COMBAT SIMULATION",
+        "ENHANCED AGGRESSION PROTOCOL",
+        "SEVERE THREAT LEVEL",
+        "MAXIMUM LETHALITY MATRIX"
+    };
+
     if (!main_net_cfg || (main_net_cfg->state != net_configuration::SERVER && main_net_cfg->state != net_configuration::CLIENT))
-        buttons.push_back({ ID_NULL, "DIFFICULTY: " + diff_str, "COMBAT SIMULATION LEVEL", make_rgba(255, 200, 50, 255) });
-
-    buttons.push_back({ ID_LIGHT_OFF, "DISPLAY GAMMA", "CALIBRATE BRIGHTNESS", make_rgba(255, 175, 40, 255) });
-    buttons.push_back({ ID_VOLUME, "AUDIO SETTINGS", "SFX & MUSIC CONTROLS", make_rgba(160, 210, 255, 255) });
-    if (prot)
-        buttons.push_back({ ID_NETWORKING, "MULTIPLAYER", "LOCAL NETWORK & SERVER", make_rgba(200, 120, 255, 255) });
-    buttons.push_back({ ID_QUIT, "QUIT TO DESKTOP", "TERMINATE SIMULATION", make_rgba(255, 75, 75, 255) });
-
-    int button_h = settings.hires ? 39 : 25;
-    int total_height = (int)buttons.size() * button_h;
-    int orig_y0 = (src_h - total_height) / 2;
-
-    for (size_t i = 0; i < buttons.size(); i++)
     {
-        int by_top = vp_y + (int)std::round((orig_y0 + (int)i * button_h) * scale_y);
-        int by_bot = vp_y + (int)std::round((orig_y0 + ((int)i + 1) * button_h) * scale_y);
+        items.push_back({ ID_NULL, std::string("DIFFICULTY: ") + s_diff_titles[cur_diff], s_diff_subtitles[cur_diff], &m_btn_diff, cur_diff });
+    }
+
+    items.push_back({ ID_LIGHT_OFF, "DISPLAY GAMMA", "CALIBRATE BRIGHTNESS", &m_btn_gamma, -1 });
+    items.push_back({ ID_VOLUME, "AUDIO SETTINGS", "SFX & MUSIC CONTROLS", &m_btn_volume, -1 });
+    if (prot)
+        items.push_back({ ID_NETWORKING, "MULTIPLAYER", "LOCAL NETWORK & SERVER", &m_btn_net, -1 });
+    items.push_back({ ID_QUIT, "QUIT TO DESKTOP", "TERMINATE SIMULATION", &m_btn_quit, -1 });
+
+    // 4. Calculate exact button layout on right side matching menu.cpp
+    int btn_w_native = settings.hires ? 50 : 32;
+    int btn_h_native = settings.hires ? 39 : 25;
+    int pad_x_native = settings.hires ? 2 : 1;
+    int total_h_native = static_cast<int>(items.size()) * btn_h_native;
+    int orig_y0 = (src_h - total_h_native) / 2;
+    int orig_x0 = src_w - btn_w_native - pad_x_native;
+
+    int hovered_idx = -1;
+
+    for (size_t i = 0; i < items.size(); i++)
+    {
+        int by_top = vp_y + (int)std::round((orig_y0 + (int)i * btn_h_native) * scale_y);
+        int by_bot = vp_y + (int)std::round((orig_y0 + ((int)i + 1) * btn_h_native) * scale_y);
+        int bx_left = vp_x + (int)std::round(orig_x0 * scale_x);
+        int bx_right = vp_x + (int)std::round((orig_x0 + btn_w_native) * scale_x);
+
+        int bw = bx_right - bx_left;
         int bh = by_bot - by_top;
 
-        int card_x = dock_x + 16;
-        int card_w = dock_w - 32;
-        int card_y = by_top + 2;
-        int card_h = bh - 4;
+        // Subtle 1px padding between plates for crisp bevel definition
+        int card_y = by_top + 1;
+        int card_h = bh - 2;
 
-        bool is_hover = (win_my >= by_top && win_my < by_bot && win_mx >= (window_w - dock_w));
-
-        // Button Card Chassis
-        uint32_t bg_col = is_hover ? make_rgba(35, 50, 66, 255) : make_rgba(18, 24, 32, 230);
-        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, card_x, card_y, card_w, card_h, bg_col);
-
-        // Frame
-        uint32_t frame_col = is_hover ? make_rgba(0, 240, 255, 255) : make_rgba(65, 85, 105, 180);
-        draw_frame(m_pixels.data(), m_canvas_w, m_canvas_h, card_x, card_y, card_w, card_h, 0, frame_col);
-
+        // Hover test in window space
+        bool is_hover = (win_mx >= bx_left - 4 && win_mx <= bx_right + 4 &&
+                         win_my >= by_top && win_my < by_bot);
+        const char *force_hover = getenv("ABUSE_FORCE_HOVER_BTN");
+        if (force_hover && atoi(force_hover) == (int)i)
+            is_hover = true;
         if (is_hover)
+            hovered_idx = static_cast<int>(i);
+
+        float brightness = is_hover ? 1.22f : 0.95f;
+
+        // Draw the high-res texture on the button plate
+        if (items[i].tex && items[i].tex->width > 0)
         {
-            // Specular top highlight sheen
-            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, card_x + 2, card_y + 1, card_w - 4, 1, make_rgba(255, 255, 255, 140));
-            // Left neon accent bar
-            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, card_x + 1, card_y + 1, 4, card_h - 2, make_rgba(0, 240, 255, 255));
+            draw_texture(m_pixels.data(), m_canvas_w, m_canvas_h, bx_left, card_y, bw, card_h, *items[i].tex, brightness);
         }
 
-        // Icon indicator bar on left of card
-        int icon_box_x = card_x + (is_hover ? 8 : 6);
-        int icon_box_y = card_y + (card_h - 18) / 2;
-        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, icon_box_x, icon_box_y, 4, 18, buttons[i].icon_color);
+        // Metallic bevel frame
+        uint32_t top_col = is_hover ? make_rgba(255, 255, 255, 230) : make_rgba(170, 185, 195, 140);
+        uint32_t bot_col = is_hover ? make_rgba(0, 220, 255, 210) : make_rgba(25, 30, 36, 230);
 
-        // Typography
-        uint32_t text_col = is_hover ? make_rgba(255, 255, 255, 255) : make_rgba(215, 230, 245, 240);
-        int text_x = icon_box_x + 14;
-        int title_y = card_y + (card_h > 36 ? 6 : (card_h - 14) / 2);
-        draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, text_x, title_y, buttons[i].title.c_str(), text_col, 1, is_hover);
+        // Highlight top & left edges
+        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx_left, card_y, bw, 2, top_col);
+        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx_left, card_y, 2, card_h, top_col);
 
-        if (card_h > 36)
+        // Shadow bottom & right edges
+        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx_left, card_y + card_h - 2, bw, 2, bot_col);
+        fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, bx_left + bw - 2, card_y, 2, card_h, bot_col);
+
+        // Cybernetic eye red iris effect for EXTREME difficulty
+        if (items[i].diff_index == 3)
         {
-            draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, text_x, title_y + 16, buttons[i].subtitle.c_str(), make_rgba(110, 145, 175, 200), 1, false);
+            int eye_cx = bx_left + (int)(bw * 0.50f);
+            int eye_cy = card_y + (int)(card_h * 0.45f);
+            int r_iris = std::max(2, (int)(bw * 0.08f));
+            for (int dy = -r_iris; dy <= r_iris; dy++)
+            {
+                for (int dx = -r_iris; dx <= r_iris; dx++)
+                {
+                    if (dx * dx + dy * dy <= r_iris * r_iris)
+                    {
+                        int px = eye_cx + dx;
+                        int py = eye_cy + dy;
+                        if (px >= 0 && px < m_canvas_w && py >= 0 && py < m_canvas_h)
+                        {
+                            uint32_t dst = m_pixels[py * m_canvas_w + px];
+                            uint8_t dr = dst & 0xFF;
+                            uint8_t dg = (dst >> 8) & 0xFF;
+                            uint8_t db = (dst >> 16) & 0xFF;
+                            m_pixels[py * m_canvas_w + px] = make_rgba(std::min(255, dr + 160),
+                                                                      (uint8_t)(dg * 0.25f),
+                                                                      (uint8_t)(db * 0.25f), 255);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Draw sleek tactical tooltip badge to the left of the hovered button
+    if (hovered_idx >= 0 && hovered_idx < (int)items.size())
+    {
+        int by_top = vp_y + (int)std::round((orig_y0 + hovered_idx * btn_h_native) * scale_y);
+        int by_bot = vp_y + (int)std::round((orig_y0 + (hovered_idx + 1) * btn_h_native) * scale_y);
+        int bx_left = vp_x + (int)std::round(orig_x0 * scale_x);
+        int bh = by_bot - by_top;
+
+        int badge_w = 270;
+        int badge_h = 42;
+        int badge_x = bx_left - badge_w - 14;
+        int badge_y = by_top + (bh - badge_h) / 2;
+
+        if (badge_x > 10)
+        {
+            // Dark translucent glass chassis
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, badge_x, badge_y, badge_w, badge_h, make_rgba(10, 14, 20, 235));
+            // Cyan tech border
+            draw_frame(m_pixels.data(), m_canvas_w, m_canvas_h, badge_x, badge_y, badge_w, badge_h, 0, make_rgba(0, 220, 255, 220));
+            // Neon accent bar on right edge pointing toward the button
+            fill_rect(m_pixels.data(), m_canvas_w, m_canvas_h, badge_x + badge_w - 3, badge_y + 1, 3, badge_h - 2, make_rgba(0, 255, 200, 255));
+
+            draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, badge_x + 12, badge_y + 7, items[hovered_idx].label.c_str(), make_rgba(255, 255, 255, 255), 1, true);
+            draw_string(m_pixels.data(), m_canvas_w, m_canvas_h, badge_x + 12, badge_y + 23, items[hovered_idx].desc.c_str(), make_rgba(120, 180, 220, 200), 1, false);
         }
     }
 }

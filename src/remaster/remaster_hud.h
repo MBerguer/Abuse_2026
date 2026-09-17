@@ -56,6 +56,16 @@ private:
     HDTexture m_hud_bay_plate;
     HDTexture m_hud_bay_empty;
     HDTexture m_hud_top_grate;
+
+    HDTexture m_title_bg;
+    HDTexture m_btn_start;
+    HDTexture m_btn_diff;
+    HDTexture m_btn_gamma;
+    HDTexture m_btn_volume;
+    HDTexture m_btn_quit;
+    HDTexture m_btn_return;
+    HDTexture m_btn_load;
+    HDTexture m_btn_net;
     bool m_assets_loaded = false;
 
     GLuint m_texture = 0;
