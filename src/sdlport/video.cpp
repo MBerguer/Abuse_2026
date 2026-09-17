@@ -44,6 +44,7 @@
 #include "level.h"
 #include "cop.h"
 #include "sbar.h"
+#include "compiled.h"
 
 extern view *player_list;
 
@@ -495,6 +496,29 @@ void update_window_done()
 
         if (RemasterConfig::get().enabled && in_gameplay && player_list)
         {
+            game_object *player_obj = player_list->m_focus;
+            bool is_dead = false;
+            bool is_climbing = false;
+
+            if (player_obj)
+            {
+                if (!player_obj->alive() || player_obj->hp() <= 0 ||
+                    player_obj->state == dead || player_obj->state == dieing ||
+                    player_obj->state == S_blown_back_dead || player_obj->aistate() == 2)
+                {
+                    is_dead = true;
+                }
+
+                if (player_obj->state == S_climbing ||
+                    player_obj->state == S_climb_on ||
+                    player_obj->state == S_climb_off)
+                {
+                    is_climbing = true;
+                }
+            }
+
+            bool flashlight_on = (!is_dead && !is_climbing);
+
             int p_world_x = player_list->x_center();
             int p_world_y = player_list->y_center() - 16;
             int muzzle_world_x = p_world_x;
@@ -517,13 +541,54 @@ void update_window_done()
                 aim_screen = wm->GetMousePos();
             }
 
-            float m_dx = (float)(aim_screen.x - m_screen.x);
-            float m_dy = (float)(aim_screen.y - m_screen.y);
-            float m_len = std::hypot(m_dx, m_dy);
-            if (m_len > 0.001f)
+            // Direction from player shoulder/torso to gun muzzle (physical barrel orientation)
+            float b_dx = (float)(m_screen.x - p_screen.x);
+            float b_dy = (float)(m_screen.y - p_screen.y);
+            float b_len = std::hypot(b_dx, b_dy);
+
+            // Direction from player shoulder/torso to mouse cursor
+            float a_dx = (float)(aim_screen.x - p_screen.x);
+            float a_dy = (float)(aim_screen.y - p_screen.y);
+            float a_len = std::hypot(a_dx, a_dy);
+
+            float out_dir_x = 0.0f;
+            float out_dir_y = 0.0f;
+
+            if (b_len > 2.0f)
             {
-                aim_dir_x = m_dx / m_len;
-                aim_dir_y = m_dy / m_len;
+                float b_norm_x = b_dx / b_len;
+                float b_norm_y = b_dy / b_len;
+
+                if (a_len > 4.0f)
+                {
+                    float a_norm_x = a_dx / a_len;
+                    float a_norm_y = a_dy / a_len;
+
+                    // Ensure aim is in the forward hemisphere of the gun barrel
+                    float dot = a_norm_x * b_norm_x + a_norm_y * b_norm_y;
+                    if (dot > 0.25f)
+                    {
+                        out_dir_x = a_norm_x;
+                        out_dir_y = a_norm_y;
+                    }
+                    else
+                    {
+                        // Cursor is behind or inside: follow weapon barrel pointing outward!
+                        out_dir_x = b_norm_x;
+                        out_dir_y = b_norm_y;
+                    }
+                }
+                else
+                {
+                    // Cursor directly on the player center: shoot forward along the barrel!
+                    out_dir_x = b_norm_x;
+                    out_dir_y = b_norm_y;
+                }
+            }
+            else
+            {
+                out_dir_x = (player_obj && player_obj->direction < 0) ? -1.0f : 1.0f;
+                out_dir_y = 0.0f;
             }
 
             RemasterLighting::get().update_frame_lights(
@@ -531,8 +596,9 @@ void update_window_done()
                 p_screen.x, p_screen.y,
                 aim_screen.x, aim_screen.y,
                 player_list->b1_suggestion != 0,
-                aim_dir_x, aim_dir_y,
-                m_screen.x, m_screen.y
+                out_dir_x, out_dir_y,
+                m_screen.x, m_screen.y,
+                flashlight_on
             );
         }
         else

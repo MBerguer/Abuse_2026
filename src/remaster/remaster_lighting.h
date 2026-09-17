@@ -40,7 +40,8 @@ public:
                              int aim_screen_x, int aim_screen_y,
                              bool player_firing,
                              float aim_dir_x = 0.0f, float aim_dir_y = 0.0f,
-                             int muzzle_screen_x = -1, int muzzle_screen_y = -1);
+                             int muzzle_screen_x = -1, int muzzle_screen_y = -1,
+                             bool flashlight_on = true);
 
     const std::vector<GPULight> &get_lights() const { return m_lights; }
 
