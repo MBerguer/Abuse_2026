@@ -1162,7 +1162,14 @@ void *sgun_ai()
       extern class palette *pal;
       if (pal && pal->red(o->lvars[sgb_bright_color]) > 200 && pal->green(o->lvars[sgb_bright_color]) < 60)
         p_type = 2; // red laser
-      RemasterParticles::get().spawn_bullet_impact((float)o->x, (float)o->y, (float)ang, p_type);
+      float nx = 0.0f, ny = 0.0f;
+      if (last_hit_has_normal)
+      {
+        nx = last_hit_normal_x;
+        ny = last_hit_normal_y;
+        last_hit_has_normal = false;
+      }
+      RemasterParticles::get().spawn_bullet_impact((float)o->x, (float)o->y, (float)ang, p_type, nx, ny);
     }
     else
     {

@@ -66,11 +66,14 @@ public:
     void shutdown();
     void clear();
 
+    // Geometry query
+    bool query_surface_normal(float x, float y, float &nx, float &ny, float search_dist = 28.0f);
+
     // Spawning API
-    void spawn_bullet_impact(float x, float y, float angle_deg, int palette = 0);
+    void spawn_bullet_impact(float x, float y, float angle_deg, int palette = 0, float nx = 0.0f, float ny = 0.0f);
     void spawn_flesh_impact(float x, float y, float angle_deg);
-    void spawn_explosion(float x, float y, int type = 0); // 0=fire/standard, 1=energy/cyan
-    void spawn_small_explosion(float x, float y);
+    void spawn_explosion(float x, float y, int type = 0, float nx = 0.0f, float ny = 0.0f); // 0=fire/standard, 1=energy/cyan
+    void spawn_small_explosion(float x, float y, float nx = 0.0f, float ny = 0.0f);
     void spawn_smoke_trail(float x, float y, float vx, float vy);
 
     // Simulation update (called once per game tick)

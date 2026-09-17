@@ -43,6 +43,8 @@ class area_controller
 } ;
 
 extern int32_t last_tile_hit_x,last_tile_hit_y;
+extern float last_hit_normal_x, last_hit_normal_y;
+extern bool last_hit_has_normal;
 extern int dev;
 class level        // contain map info and objects
 {

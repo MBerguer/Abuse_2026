@@ -2428,22 +2428,30 @@ void level::add_object(game_object *new_guy)
       new_guy->otype < total_objects && object_names && object_names[new_guy->otype])
   {
     const char *oname = object_names[new_guy->otype];
+    float nx = 0.0f, ny = 0.0f;
+    if (last_hit_has_normal)
+    {
+      nx = last_hit_normal_x;
+      ny = last_hit_normal_y;
+      last_hit_has_normal = false;
+    }
+
     if (strcmp(oname, "EXPLODE1") == 0)
     {
-      RemasterParticles::get().spawn_explosion((float)new_guy->x, (float)new_guy->y, 0);
+      RemasterParticles::get().spawn_explosion((float)new_guy->x, (float)new_guy->y, 0, nx, ny);
     }
     else if (strcmp(oname, "EXPLODE8") == 0)
     {
-      RemasterParticles::get().spawn_explosion((float)new_guy->x, (float)new_guy->y, 1);
+      RemasterParticles::get().spawn_explosion((float)new_guy->x, (float)new_guy->y, 1, nx, ny);
     }
     else if (strcmp(oname, "EXPLODE3") == 0 || strcmp(oname, "EXPLODE2") == 0 ||
              strcmp(oname, "EXPLODE6") == 0 || strcmp(oname, "EXPLODE7") == 0)
     {
-      RemasterParticles::get().spawn_small_explosion((float)new_guy->x, (float)new_guy->y);
+      RemasterParticles::get().spawn_small_explosion((float)new_guy->x, (float)new_guy->y, nx, ny);
     }
     else if (strcmp(oname, "EXPLODE5") == 0)
     {
-      RemasterParticles::get().spawn_bullet_impact((float)new_guy->x, (float)new_guy->y, 0.0f, 0);
+      RemasterParticles::get().spawn_bullet_impact((float)new_guy->x, (float)new_guy->y, 0.0f, 0, nx, ny);
     }
     else if (strcmp(oname, "SMALL_LIGHT_CLOUD") == 0)
     {
@@ -2647,6 +2655,8 @@ game_object *level::find_object(int32_t x, int32_t y)
 }
 
 int32_t last_tile_hit_x,last_tile_hit_y;
+float last_hit_normal_x = 0.0f, last_hit_normal_y = -1.0f;
+bool last_hit_has_normal = false;
 
 #define remapx(x) (x==0 ? -1 : x==tl-1 ? tl+1 : x)
 #define remapy(y) (y==0 ? -1 : y==th-1 ? th+1 : y)
@@ -2722,6 +2732,24 @@ void level::foreground_intersect(int32_t x1, int32_t y1, int32_t &x2, int32_t &y
       {
         last_tile_hit_x=bx;
         last_tile_hit_y=by;
+        float seg_dx = (float)(xp2 - xp1);
+        float seg_dy = (float)(yp2 - yp1);
+        float nx = -seg_dy;
+        float ny = seg_dx;
+        float in_dx = (float)(x1 - x2);
+        float in_dy = (float)(y1 - y2);
+        if (nx * in_dx + ny * in_dy < 0.0f)
+        {
+          nx = -nx;
+          ny = -ny;
+        }
+        float len = std::hypot(nx, ny);
+        if (len > 0.0001f)
+        {
+          last_hit_normal_x = nx / len;
+          last_hit_normal_y = ny / len;
+          last_hit_has_normal = true;
+        }
       }
 
         }
@@ -2795,8 +2823,25 @@ void level::vforeground_intersect(int32_t x1, int32_t y1, int32_t &y2)
         setback_intersect(checkx,y1,checkx,y2,xp1,yp1,xp2,yp2,-1);
       if (oy2!=y2)
       {
-    last_tile_hit_x=bx;
-    last_tile_hit_y=by;
+        last_tile_hit_x=bx;
+        last_tile_hit_y=by;
+        float seg_dx = (float)(xp2 - xp1);
+        float seg_dy = (float)(yp2 - yp1);
+        float nx = -seg_dy;
+        float ny = seg_dx;
+        float in_dy = (float)(y1 - y2);
+        if (ny * in_dy < 0.0f)
+        {
+          nx = -nx;
+          ny = -ny;
+        }
+        float len = std::hypot(nx, ny);
+        if (len > 0.0001f)
+        {
+          last_hit_normal_x = nx / len;
+          last_hit_normal_y = ny / len;
+          last_hit_has_normal = true;
+        }
       }
     }
   }
